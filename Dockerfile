@@ -19,7 +19,7 @@ LABEL \
     io.hass.description="Hosted AutiPlanner API and offline-first planner" \
     io.hass.url="https://github.com/lunikodevelopment/AutiPlanner-SaaS"
 
-RUN corepack enable
+RUN apk add --no-cache su-exec && corepack enable
 
 WORKDIR /app
 
@@ -46,7 +46,11 @@ ENV NODE_ENV=production \
 
 RUN addgroup -S app && adduser -S app -G app \
     && mkdir -p /data && chown -R app:app /data
-USER app
+
+# The container starts as root so it can take ownership of a Supervisor-mounted
+# /data, then drops to `app` before running the server. See docker/entrypoint.sh.
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 VOLUME ["/data"]
 EXPOSE 8080
@@ -55,4 +59,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||8080)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 # `node --import tsx` avoids needing pnpm (and therefore network) at runtime.
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["node", "--import", "tsx", "apps/api/src/server.ts"]

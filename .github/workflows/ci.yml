@@ -78,7 +78,11 @@ jobs:
 
       - name: Start the container
         run: |
-          docker run -d --name autiplanner -p 8080:8080 -e DATA_DIR=/tmp/data autiplanner-saas:ci
+          mkdir -p data-test
+          # A bind mount at /data owned by the runner (not uid 100) mirrors how
+          # Supervisor mounts an app's data directory. The old -e DATA_DIR=/tmp/data
+          # used a world-writable path and hid the permission bug.
+          docker run -d --name autiplanner -p 8080:8080 -v "$PWD/data-test:/data" autiplanner-saas:ci
 
       - name: Wait for health
         run: |
@@ -177,7 +181,7 @@ jobs:
           for platform in linux/amd64 linux/arm64; do
             echo "::group::$platform"
             docker pull --platform "$platform" "$image"
-            cid=$(docker run -d --platform "$platform" -p 8082:8080 -e DATA_DIR=/tmp/data "$image")
+            cid=$(docker run -d --platform "$platform" -p 8082:8080 -v "$PWD/data-$(echo "$platform" | tr '/' '-')":/data "$image")
             healthy=no
             for _ in $(seq 1 40); do
               if curl -fsS http://127.0.0.1:8082/api/health > /dev/null 2>&1; then
