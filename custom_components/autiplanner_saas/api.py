@@ -16,7 +16,16 @@ from dataclasses import dataclass
 from typing import Any
 
 #: Commands a client may send. Mirrors the API's ``CommandName``.
-COMMANDS = ("complete", "mark_missed", "skip", "reset", "create", "update", "delete")
+COMMANDS = (
+    "complete",
+    "mark_missed",
+    "skip",
+    "reset",
+    "create",
+    "update",
+    "delete",
+    "add_series",
+)
 
 DAY_PARTS = ("morning", "afternoon", "evening", "night")
 STATUSES = ("pending", "completed", "missed", "skipped")
@@ -252,6 +261,50 @@ def parse_item_response(payload: dict[str, Any]) -> RoutineItem | None:
     return None
 
 
+@dataclass(frozen=True)
+class RoutineTemplate:
+    """A repeating routine, before it is sent to the server.
+
+    Occurrences are expanded by the server for whatever window a reader asks
+    for, so this carries the rule and never a list of dates. Completion has no
+    place here: an outcome belongs to one day, not to the rule.
+    """
+
+    uid: str
+    title: str
+    date: str
+    day_part: str
+    recurrence: dict[str, Any]
+    description: str | None = None
+    start: str | None = None
+    due: str | None = None
+    timezone: str | None = None
+    order: int | None = None
+    exdates: list[str] | None = None
+
+    def to_payload(self) -> dict[str, Any]:
+        """Back to the wire shape, omitting absent fields."""
+        payload: dict[str, Any] = {
+            "uid": self.uid,
+            "title": self.title,
+            "date": self.date,
+            "dayPart": self.day_part,
+            "recurrence": dict(self.recurrence),
+        }
+        optional = {
+            "description": self.description,
+            "start": self.start,
+            "due": self.due,
+            "timezone": self.timezone,
+            "order": self.order,
+            "exdates": self.exdates,
+        }
+        for key, value in optional.items():
+            if value is not None:
+                payload[key] = list(value) if isinstance(value, list) else value
+        return payload
+
+
 def build_command(
     command: str,
     *,
@@ -259,6 +312,7 @@ def build_command(
     completed_at: str | None = None,
     expected_revision: int | None = None,
     item: RoutineItem | None = None,
+    series: RoutineTemplate | None = None,
     patch: dict[str, Any] | None = None,
     client_command_id: str | None = None,
 ) -> dict[str, Any]:
@@ -276,6 +330,8 @@ def build_command(
         body["clientCommandId"] = client_command_id
     if item is not None:
         body["item"] = item.to_payload()
+    if series is not None:
+        body["series"] = series.to_payload()
     if patch is not None:
         body["patch"] = patch
     return body

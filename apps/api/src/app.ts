@@ -18,7 +18,7 @@ import { CalendarRegistry } from "./registry.js";
 import { RateLimiter, constantTimeStringEqual } from "./security.js";
 import { serveStatic } from "./static.js";
 import { serializeEventCalendar } from "@autiplanner/ics";
-import type { RoutineItem } from "@autiplanner/core";
+import type { RoutineItem, RoutineTemplate } from "@autiplanner/core";
 
 export interface AppDependencies {
   readonly config: Config;
@@ -72,6 +72,7 @@ const COMMANDS: readonly CommandName[] = [
   "create",
   "update",
   "delete",
+  "add_series",
 ];
 
 export function createApp(dependencies: AppDependencies): http.RequestListener {
@@ -385,6 +386,7 @@ export function readCommand(body: Record<string, unknown>): CommandInput {
     expectedRevision?: number;
     clientCommandId?: string;
     item?: RoutineItem;
+    series?: RoutineTemplate;
     patch?: Record<string, unknown>;
   } = { command: command as CommandName };
 
@@ -418,6 +420,12 @@ export function readCommand(body: Record<string, unknown>): CommandInput {
       throw badRequest("invalid_command", "item must be an object");
     }
     input.item = body.item as RoutineItem;
+  }
+  if (body.series !== undefined) {
+    if (body.series === null || typeof body.series !== "object" || Array.isArray(body.series)) {
+      throw badRequest("invalid_command", "series must be an object");
+    }
+    input.series = body.series as RoutineTemplate;
   }
   if (body.patch !== undefined) {
     if (body.patch === null || typeof body.patch !== "object" || Array.isArray(body.patch)) {

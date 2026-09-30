@@ -247,3 +247,88 @@ delete:
         number:
           min: 0
           mode: box
+
+add_series:
+  name: Add repeated routine
+  description: >-
+    Add a repeating routine. It is stored as a rule and its occurrences are
+    expanded for whatever window is asked for; no future calendar is written
+    down. An outcome still belongs to a single day, so mark one occurrence
+    completed or missed with that occurrence's uid, which is
+    "<series uid>:<YYYY-MM-DD>". Remove the whole repeat by passing the series
+    uid to "Delete routine item".
+  target:
+    entity:
+      integration: autiplanner_saas
+  fields:
+    uid:
+      name: UID
+      description: Stable series uid, shared by every occurrence.
+      required: true
+      example: "medication-am@example"
+      selector:
+        text:
+    title:
+      name: Title
+      required: true
+      selector:
+        text:
+    date:
+      name: Start date
+      description: The first day it happens. Weekly repeats use its weekday.
+      required: true
+      example: "2026-09-30"
+      selector:
+        text:
+    day_part:
+      name: Day part
+      required: true
+      selector:
+        select:
+          options:
+            - morning
+            - afternoon
+            - evening
+            - night
+    recurrence:
+      name: Recurrence
+      description: >-
+        A rule from the shared model, for example {"freq": "weekly", "byDay":
+        ["WE"]} for every Wednesday, or {"freq": "daily"} for every day. It
+        accepts interval, count, and until as well.
+      required: true
+      selector:
+        object:
+    start:
+      name: Start time
+      description: >-
+        Optional local time, carried onto every occurrence. A timestamp with no
+        offset is the household's own clock.
+      example: "2026-09-30T08:30:00"
+      selector:
+        text:
+    due:
+      name: Due time
+      selector:
+        text:
+    timezone:
+      name: Timezone
+      selector:
+        text:
+    order:
+      name: Order
+      selector:
+        number:
+          min: 0
+          mode: box
+    exdates:
+      name: Excluded dates
+      description: Days to leave out, as YYYY-MM-DD. Holidays, appointments.
+      selector:
+        object:
+    expected_revision:
+      name: Expected revision
+      selector:
+        number:
+          min: 0
+          mode: box

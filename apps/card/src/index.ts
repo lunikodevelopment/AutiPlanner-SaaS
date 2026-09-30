@@ -15,6 +15,7 @@ import {
   DAY_PARTS,
   STATUS_ACCESSIBLE_LABEL,
   STATUS_SYMBOL,
+  WEEKDAY_CODES,
   formatClock,
   isCalendarDate,
   type DayPart,
@@ -64,7 +65,17 @@ interface Draft {
   date: string;
   dayPart: DayPart;
   time: string;
+  repeat: RepeatChoice;
 }
+
+/** What the add form offers. `none` keeps an item a one-off occurrence. */
+export type RepeatChoice = "none" | "daily" | "weekly";
+
+const REPEAT_LABEL: Readonly<Record<RepeatChoice, string>> = {
+  none: "Just once",
+  daily: "Every day",
+  weekly: "Every week",
+};
 
 export class AutiPlannerCard extends HTMLElement {
   #root: ShadowRoot;
@@ -77,13 +88,19 @@ export class AutiPlannerCard extends HTMLElement {
   #message = "";
   #messageIsError = false;
   #editorOpen = false;
-  #draft: Draft = { title: "", date: "", dayPart: "morning", time: "" };
+  #draft: Draft = { title: "", date: "", dayPart: "morning", time: "", repeat: "none" };
+  /** The series whose removal is waiting to be confirmed, if any. */
+  #confirmStop: string | null = null;
 
   constructor() {
     super();
     this.#root = this.attachShadow({ mode: "open" });
     this.#root.addEventListener("click", (event) => this.#onClick(event));
     this.#root.addEventListener("submit", (event) => this.#onSubmit(event));
+    // Only `change`, not `input`: it fires when a field settles, which is when
+    // the weekday sentence needs to catch up. Redrawing the whole form on every
+    // keystroke would take the cursor out of the title field mid-word.
+    this.#root.addEventListener("change", (event) => this.#onChange(event));
   }
 
   static getStubConfig(hass: HomeAssistantLike | undefined): Record<string, unknown> {
@@ -230,13 +247,28 @@ export class AutiPlannerCard extends HTMLElement {
              aria-label="Mark ${escape(item.title)} ${escape(button.word)}">${button.glyph}</button>`,
       )
       .join("");
-    return `<li class="item" data-status="${status}">
+    const repeat =
+      item.routineId === undefined
+        ? ""
+        : `<button type="button" class="repeat" data-act="stop-repeat" data-series="${escape(item.routineId)}"
+             aria-label="Stop repeating ${escape(item.title)}">&#8635;</button>`;
+    // Stopping a repeat removes every day it falls on, so the first tap only
+    // asks. One stray tap on a shared dashboard must not undo a routine.
+    const acts =
+      item.routineId !== undefined && this.#confirmStop === item.routineId
+        ? `<span class="confirm" role="status">
+             <span class="confirm-text">Stop repeating?</span>
+             <button type="button" class="act" data-act="stop-repeat-yes" data-series="${escape(item.routineId)}" aria-label="Yes, stop repeating ${escape(item.title)}">Yes</button>
+             <button type="button" class="act" data-act="stop-repeat-no" aria-label="Keep repeating ${escape(item.title)}">No</button>
+           </span>`
+        : `<span class="acts">${buttons}</span>`;
+    return `<li class="item" data-status="${status}"${item.routineId === undefined ? "" : ` data-series="${escape(item.routineId)}"`}>
       <span class="glyph" aria-hidden="true">${STATUS_SYMBOL[status]}</span>
       <span class="main">
-        <span class="name">${escape(item.title)}</span>
+        <span class="name">${escape(item.title)}${repeat}</span>
         <span class="meta">${escape(meta)}</span>
       </span>
-      <span class="acts">${buttons}</span>
+      ${acts}
     </li>`;
   }
 
@@ -247,6 +279,24 @@ export class AutiPlannerCard extends HTMLElement {
       (dayPart) =>
         `<option value="${dayPart}"${dayPart === draft.dayPart ? " selected" : ""}>${escape(DAY_PART_HEADING[dayPart])}</option>`,
     ).join("");
+    const repeats = (Object.keys(REPEAT_LABEL) as RepeatChoice[])
+      .map((choice) => {
+        // The weekly option names the weekday it would land on, from the date
+        // the form is showing. `#onChange` keeps that word current as the date
+        // is edited, without redrawing the form under the household's cursor.
+        const label =
+          choice === "weekly" ? `Every ${weekdayName(isCalendarDate(date) ? date : today)}` : REPEAT_LABEL[choice];
+        return `<option value="${choice}"${choice === draft.repeat ? " selected" : ""}${choice === "weekly" ? ' id="ap-repeat-weekly"' : ""}>${escape(label)}</option>`;
+      })
+      .join("");
+    // The weekday a weekly repeat lands on comes from the date, so the sentence
+    // under the form says which day that is rather than asking again.
+    const note =
+      draft.repeat === "weekly"
+        ? `Repeats every ${weekdayName(isCalendarDate(date) ? date : today)}`
+        : draft.repeat === "daily"
+          ? "Repeats every day"
+          : "";
     return `<form class="add" data-form="add">
       <label for="ap-title">New routine item</label>
       <input id="ap-title" name="title" value="${escape(draft.title)}" required maxlength="120" placeholder="Take medication" />
@@ -263,7 +313,12 @@ export class AutiPlannerCard extends HTMLElement {
           <label for="ap-time">Time (optional)</label>
           <input id="ap-time" name="time" type="time" value="${escape(draft.time)}" />
         </div>
+        <div>
+          <label for="ap-repeat">Repeats</label>
+          <select id="ap-repeat" name="repeat">${repeats}</select>
+        </div>
       </div>
+      <p class="repeat-note"${note === "" ? " hidden" : ""}>${escape(note)}</p>
       <button type="submit"${this.#busy ? " disabled" : ""}>Add item</button>
     </form>`;
   }
@@ -277,6 +332,7 @@ export class AutiPlannerCard extends HTMLElement {
     if (trigger === null) return;
     const action = trigger.dataset["act"];
     const uid = trigger.dataset["uid"];
+    const series = trigger.dataset["series"];
     if (action === "toggle-add") {
       this.#editorOpen = !this.#editorOpen;
       this.#render();
@@ -284,6 +340,21 @@ export class AutiPlannerCard extends HTMLElement {
     }
     if (action === "refresh") {
       void this.#refresh();
+      return;
+    }
+    if (action === "stop-repeat") {
+      // Asks first; see the confirm strip in the row.
+      this.#confirmStop = series ?? null;
+      this.#render();
+      return;
+    }
+    if (action === "stop-repeat-no") {
+      this.#confirmStop = null;
+      this.#render();
+      return;
+    }
+    if (action === "stop-repeat-yes") {
+      if (series !== undefined) void this.#stopRepeating(series);
       return;
     }
     if (uid === undefined) return;
@@ -301,6 +372,42 @@ export class AutiPlannerCard extends HTMLElement {
     if (form === null) return;
     event.preventDefault();
     void this.#create(form);
+  }
+
+  /**
+   * Keeps the weekday wording in step with the date, in place.
+   *
+   * The repeat select and the sentence under the form both name the weekday a
+   * weekly routine would land on, and that word comes from the date field. Only
+   * that text is rewritten: re-rendering the form here would drop focus.
+   */
+  #onChange(event: Event): void {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const form = target.closest<HTMLFormElement>("form[data-form='add']");
+    if (form === null) return;
+    const data = new FormData(form);
+    const chosen = String(data.get("date") ?? "").trim();
+    const date = chosen === "" ? localToday(this.#hass?.config.time_zone) : chosen;
+    const repeat = String(data.get("repeat") ?? "none");
+    const weekday = isCalendarDate(date) ? weekdayName(date) : "";
+
+    const weekly = form.querySelector("#ap-repeat-weekly");
+    if (weekly !== null && weekday !== "") {
+      weekly.textContent = `Every ${weekday}`;
+    }
+    const note = form.querySelector(".repeat-note");
+    if (note !== null) {
+      const text =
+        repeat === "weekly" && weekday !== ""
+          ? `Repeats every ${weekday}`
+          : repeat === "daily"
+            ? "Repeats every day"
+            : "";
+      note.textContent = text;
+      if (text === "") note.setAttribute("hidden", "");
+      else note.removeAttribute("hidden");
+    }
   }
 
   async #act(uid: string, button: ActionButton): Promise<void> {
@@ -327,6 +434,7 @@ export class AutiPlannerCard extends HTMLElement {
     const chosen = String(data.get("date") ?? "").trim();
     const dayPart = String(data.get("dayPart") ?? "morning");
     const time = String(data.get("time") ?? "").trim();
+    const repeat = String(data.get("repeat") ?? "none");
 
     if (title === "" || !isDayPart(dayPart)) {
       this.#message = "A title and a day part are required.";
@@ -352,26 +460,64 @@ export class AutiPlannerCard extends HTMLElement {
       return;
     }
 
-    const payload: Record<string, unknown> = {
-      uid: `ha-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-      title,
-      date,
-      day_part: dayPart,
-      status: "pending",
-    };
-    if (time !== "") {
-      // A floating local time, which is what the core model expects when no
-      // timezone is given: the household's own clock.
-      payload["start"] = `${date}T${time}:00`;
-    }
+    const uid = `ha-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const start = time === "" ? undefined : `${date}T${time}:00`;
 
     this.#busy = true;
     this.#message = "";
     this.#messageIsError = false;
     try {
-      await this.#service("create", payload);
-      this.#draft = { title: "", date, dayPart, time };
+      if (repeat === "none") {
+        const payload: Record<string, unknown> = {
+          uid,
+          title,
+          date,
+          day_part: dayPart,
+          status: "pending",
+        };
+        if (start !== undefined) payload["start"] = start;
+        await this.#service("create", payload);
+      } else {
+        // A repeating routine is stored as a rule, not as a pile of days: the
+        // server expands it for whatever window a reader asks for.
+        const payload: Record<string, unknown> = {
+          uid,
+          title,
+          date,
+          day_part: dayPart,
+          recurrence:
+            repeat === "weekly"
+              ? // The weekday comes from the date the household chose, which is
+                // what "the same day every week" means on the form.
+                { freq: "weekly", byDay: [weekdayCode(date)] }
+              : { freq: "daily" },
+        };
+        if (start !== undefined) payload["start"] = start;
+        await this.#service("add_series", payload);
+      }
+      this.#draft = { title: "", date, dayPart, time, repeat: "none" };
       this.#editorOpen = false;
+      await this.#refresh();
+    } catch (error) {
+      this.#message = errorText(error);
+      this.#messageIsError = true;
+    } finally {
+      this.#busy = false;
+      this.#render();
+    }
+  }
+
+  /** Removes a whole repeating routine, once the household has said so. */
+  async #stopRepeating(series: string): Promise<void> {
+    if (this.#busy) return;
+    this.#busy = true;
+    this.#message = "";
+    this.#messageIsError = false;
+    try {
+      // The series is removed by its own uid, which is what each occurrence
+      // carries as routineId. Every day it falls on goes with it.
+      await this.#service("delete", { uid: series });
+      this.#confirmStop = null;
       await this.#refresh();
     } catch (error) {
       this.#message = errorText(error);
@@ -536,6 +682,30 @@ export function dayName(date: string, index: number): string {
   }).format(new Date(Date.UTC(year, month - 1, day)));
 }
 
+/**
+ * The iCalendar weekday code for a day.
+ *
+ * A weekly repeat is anchored on the weekday of the date the household picked,
+ * so "every week on the same day" needs no second question on the form.
+ *
+ * `WEEKDAY_CODES` starts at Monday; `getUTCDay` starts at Sunday. The shift is
+ * what makes a Wednesday come out as WE rather than TH.
+ */
+export function weekdayCode(date: string): string {
+  const [year, month, day] = date.split("-").map(Number) as [number, number, number];
+  const sundayFirst = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+  return WEEKDAY_CODES[(sundayFirst + 6) % 7] ?? "MO";
+}
+
+/** The same weekday in words, for the sentence under the form. */
+export function weekdayName(date: string): string {
+  const [year, month, day] = date.split("-").map(Number) as [number, number, number];
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "UTC",
+    weekday: "long",
+  }).format(new Date(Date.UTC(year, month - 1, day)));
+}
+
 function escape(value: string): string {
   const entities: Record<string, string> = {
     "&": "&amp;",
@@ -582,6 +752,12 @@ const STYLES = `
          background: var(--secondary-background-color, #ececec); border: none; }
   .act:hover { background: var(--primary-color, #03a9f4); color: #fff; }
   .act:disabled { opacity: 0.5; cursor: default; }
+  .repeat { background: none; border: none; cursor: pointer; padding: 0 4px; font-size: 0.9rem;
+            color: var(--secondary-text-color, #727272); min-width: 32px; min-height: 32px; }
+  .repeat:hover { color: var(--primary-color, #03a9f4); }
+  .confirm { display: flex; align-items: center; gap: 4px; }
+  .confirm-text { font-size: 0.78rem; color: var(--secondary-text-color, #727272); white-space: nowrap; }
+  .add .repeat-note { margin: 0; font-size: 0.78rem; color: var(--secondary-text-color, #727272); }
   .empty { font-size: 0.85rem; color: var(--secondary-text-color, #727272); padding: 4px 8px; }
   .message, .notice { margin-top: 10px; font-size: 0.85rem; padding: 8px 10px; border-radius: 8px;
                       background: var(--secondary-background-color, #ececec);

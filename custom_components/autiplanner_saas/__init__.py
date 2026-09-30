@@ -20,7 +20,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .api import AutiPlannerApiError, AutiPlannerAuthError, RoutineItem
+from .api import AutiPlannerApiError, AutiPlannerAuthError, RoutineItem, RoutineTemplate
 from .client import AutiPlannerClient
 from .const import (
     ATTR_DAY_PART,
@@ -49,6 +49,7 @@ from .const import (
     SERVICE_RESET,
     SERVICE_SKIP,
     SERVICE_UPDATE,
+    SERVICE_ADD_SERIES,
 )
 from .coordinator import AutiPlannerCoordinator
 
@@ -83,6 +84,25 @@ _ITEM_SCHEMA = vol.Schema(
         vol.Optional("timezone"): cv.string,
         vol.Optional("completed_at"): cv.string,
         vol.Optional("order"): vol.Coerce(int),
+    },
+    extra=vol.ALLOW_EXTRA,
+)
+
+_SERIES_SCHEMA = vol.Schema(
+    {
+        vol.Optional("entity_id"): cv.entity_ids,
+        vol.Required(ATTR_UID): cv.string,
+        vol.Required("title"): cv.string,
+        vol.Required("date"): cv.string,
+        vol.Required(ATTR_DAY_PART): vol.In(DAY_PARTS),
+        vol.Required("recurrence"): dict,
+        vol.Optional("description"): cv.string,
+        vol.Optional("start"): cv.string,
+        vol.Optional("due"): cv.string,
+        vol.Optional("timezone"): cv.string,
+        vol.Optional("order"): vol.Coerce(int),
+        vol.Optional("exdates"): [cv.string],
+        vol.Optional(ATTR_EXPECTED_REVISION): vol.Coerce(int),
     },
     extra=vol.ALLOW_EXTRA,
 )
@@ -136,6 +156,9 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     async def _delete(call: ServiceCall) -> None:
         await _run(hass, call, SERVICE_DELETE)
 
+    async def _add_series(call: ServiceCall) -> None:
+        await _run(hass, call, SERVICE_ADD_SERIES)
+
     handlers = {
         SERVICE_COMPLETE: _complete,
         SERVICE_MARK_MISSED: _mark_missed,
@@ -144,6 +167,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         SERVICE_CREATE: _create,
         SERVICE_UPDATE: _update,
         SERVICE_DELETE: _delete,
+        SERVICE_ADD_SERIES: _add_series,
     }
     for name, handler in handlers.items():
         if hass.services.has_service(DOMAIN, name):
@@ -164,6 +188,8 @@ def _service_schema(name: str) -> vol.Schema:
         )
     if name == SERVICE_CREATE:
         return _ITEM_SCHEMA.extend({vol.Optional("entity_id"): cv.entity_ids})
+    if name == SERVICE_ADD_SERIES:
+        return _SERIES_SCHEMA
     if name == SERVICE_UPDATE:
         return _UPDATE_SCHEMA
     return vol.Schema(
@@ -234,6 +260,36 @@ async def _dispatch(
             expected_revision=expected,
             calendar_id=calendar_id,
         )
+    elif command == SERVICE_ADD_SERIES:
+        await client.add_series(
+            _series_from_service(payload),
+            expected_revision=expected,
+            calendar_id=calendar_id,
+        )
+
+
+def _series_from_service(payload: dict) -> RoutineTemplate:
+    """Builds a repeating template from a service call.
+
+    No status and no completion timestamp: an outcome belongs to one day, and
+    the API rejects a template that carries one.
+    """
+    recurrence = payload["recurrence"]
+    if not isinstance(recurrence, dict):
+        raise HomeAssistantError("AutiPlanner: recurrence must be a mapping")
+    return RoutineTemplate(
+        uid=payload[ATTR_UID],
+        title=payload["title"],
+        date=payload["date"],
+        day_part=payload[ATTR_DAY_PART],
+        recurrence=recurrence,
+        description=payload.get("description"),
+        start=payload.get("start"),
+        due=payload.get("due"),
+        timezone=payload.get("timezone"),
+        order=payload.get("order"),
+        exdates=payload.get("exdates"),
+    )
 
 
 def _now_timestamp() -> str:

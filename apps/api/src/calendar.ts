@@ -1,10 +1,13 @@
 import {
+  addSeries,
   complete,
   create,
   deleteItem,
+  deleteSeries,
   expandSeries,
   isCalendarDate,
   markMissed,
+  occurrenceForUid,
   reset,
   RoutineCommandError,
   skip,
@@ -53,7 +56,16 @@ export type CommandName =
   | "reset"
   | "create"
   | "update"
-  | "delete";
+  | "delete"
+  | "add_series";
+
+/** Commands that record an outcome and so may target a series occurrence. */
+const STATUS_COMMANDS: ReadonlySet<CommandName> = new Set([
+  "complete",
+  "mark_missed",
+  "skip",
+  "reset",
+]);
 
 export interface CommandInput {
   readonly command: CommandName;
@@ -63,6 +75,8 @@ export interface CommandInput {
   /** A stable key supplied by the client so a retry is not applied twice. */
   readonly clientCommandId?: string;
   readonly item?: RoutineItem;
+  /** A repeating template, for `add_series`. Completion never belongs on it. */
+  readonly series?: RoutineTemplate;
   readonly patch?: RoutineItemPatch;
 }
 
@@ -183,6 +197,9 @@ export class CalendarStore {
       }
 
       const before = this.items;
+      // Series can change too, so they are part of the rollback: restoring only
+      // the items would leave a rule in memory that the file never received.
+      const beforeSeries = this.series;
       const result = this.mutate(input);
       if (!result.changed) {
         return { item: result.item, changed: false, revision: this.meta.revision };
@@ -201,6 +218,7 @@ export class CalendarStore {
       } catch (error) {
         // A failed write must not leave the in-memory state ahead of the file.
         this.items = before;
+        this.series = beforeSeries;
         this.meta.revision -= 1;
         if (key !== undefined) this.meta.appliedCommands.pop();
         throw error;
@@ -211,7 +229,20 @@ export class CalendarStore {
 
   private mutate(input: CommandInput): { item: RoutineItem | null; changed: boolean } {
     try {
+      // An outcome recorded against a repeating routine targets a day, not the
+      // stored list: the occurrence does not exist as a document until something
+      // is said about it. Writing it here means the day it was recorded on is
+      // the only day that changes.
+      if (STATUS_COMMANDS.has(input.command) && input.uid !== undefined) {
+        this.materializeSeriesOccurrence(input.uid);
+      }
       switch (input.command) {
+        case "add_series": {
+          if (!input.series) throw badRequest("invalid_command", "add_series requires series");
+          const outcome = addSeries(this.items, this.series, input.series);
+          this.series = [...outcome.series];
+          return { item: null, changed: outcome.result.changed };
+        }
         case "complete": {
           requireUid(input);
           if (!input.completedAt) {
@@ -254,6 +285,14 @@ export class CalendarStore {
         }
         case "delete": {
           requireUid(input);
+          // A repeating routine is removed by its own uid, as in the on-device
+          // integration. Its recorded occurrences go with it.
+          if (this.series.some((template) => template.uid === input.uid)) {
+            const outcome = deleteSeries(this.items, this.series, input.uid);
+            this.items = [...outcome.items];
+            this.series = [...outcome.series];
+            return { item: null, changed: outcome.changed };
+          }
           const outcome = deleteItem(this.items, input.uid);
           this.items = [...outcome.items];
           return { item: outcome.item, changed: outcome.changed };
@@ -285,6 +324,20 @@ export class CalendarStore {
 
   private find(uid: string): RoutineItem | null {
     return this.items.find((item) => item.uid === uid) ?? null;
+  }
+
+  /**
+   * Adds the pending occurrence a series uid names.
+   *
+   * Nothing is written for a day until something is said about it, so the
+   * occurrence has to exist as a document here before its outcome can be stored.
+   * The rule itself is untouched: only that day changes.
+   */
+  private materializeSeriesOccurrence(uid: string): void {
+    if (this.items.some((item) => item.uid === uid)) return;
+    const occurrence = occurrenceForUid(this.series, uid);
+    if (occurrence === null) return;
+    this.items = [...this.items, occurrence];
   }
 
   private async loadUnlocked(): Promise<void> {

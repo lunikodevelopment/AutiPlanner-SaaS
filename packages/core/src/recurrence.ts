@@ -1,4 +1,9 @@
-import type { DayPart, RoutineItem, RoutineStatus } from "./model.js";
+import {
+  validateRoutineItem,
+  type DayPart,
+  type RoutineItem,
+  type RoutineStatus,
+} from "./model.js";
 import { isCalendarDate } from "./time.js";
 
 export const WEEKDAY_CODES = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"] as const;
@@ -66,6 +71,89 @@ export function occurrenceUid(seriesUid: string, date: string): string {
 
 export function isOccurrenceUid(uid: string, seriesUid: string, date: string): boolean {
   return uid === occurrenceUid(seriesUid, date);
+}
+
+/**
+ * The pending occurrence a series uid refers to, or null when the uid is not an
+ * occurrence of any series in the list.
+ *
+ * Matched by stripping each known series uid rather than by splitting on the
+ * last colon, because a series uid may itself contain one. Anchors before the
+ * series start are refused: that day is not part of the series.
+ */
+export function occurrenceForUid(
+  series: readonly RoutineTemplate[],
+  uid: string,
+): RoutineItem | null {
+  for (const template of series) {
+    const prefix = `${template.uid}:`;
+    if (!uid.startsWith(prefix)) continue;
+    const date = uid.slice(prefix.length);
+    if (!isCalendarDate(date) || date < template.date) continue;
+    return materializeOccurrence(template, date);
+  }
+  return null;
+}
+
+/**
+ * Checks a rule without expanding it. `occurrenceDates` refuses a bad rule by
+ * throwing mid-expansion; this says what is wrong with it instead, which is what
+ * a client that is about to store one needs to be told.
+ */
+export function validateRecurrence(rule: RecurrenceRule): readonly string[] {
+  const errors: string[] = [];
+  if (rule.freq !== "daily" && rule.freq !== "weekly" && rule.freq !== "monthly") {
+    errors.push("recurrence freq must be daily, weekly, or monthly");
+  }
+  if (rule.interval !== undefined && (!Number.isInteger(rule.interval) || rule.interval < 1)) {
+    errors.push("recurrence interval must be a positive integer");
+  }
+  if (rule.count !== undefined && (!Number.isInteger(rule.count) || rule.count < 1)) {
+    errors.push("recurrence count must be a positive integer");
+  }
+  if (rule.until !== undefined && !isCalendarDate(rule.until)) {
+    errors.push("recurrence until must be a calendar day in YYYY-MM-DD");
+  }
+  if (rule.byDay !== undefined) {
+    if (rule.byDay.length === 0) {
+      errors.push("recurrence byDay must name at least one weekday");
+    }
+    for (const code of rule.byDay) {
+      if (!(WEEKDAY_CODES as readonly string[]).includes(code)) {
+        errors.push(`recurrence byDay has an unknown weekday: ${String(code)}`);
+      }
+    }
+    if (rule.freq !== "weekly") {
+      errors.push("recurrence byDay is only supported for weekly");
+    }
+  }
+  return errors;
+}
+
+/**
+ * Checks a series before it is stored. The item rules are reused rather than
+ * restated: the anchor occurrence carries the same title, day part, and
+ * timestamps, so anything the domain would reject on an item is rejected here.
+ */
+export function validateTemplate(template: RoutineTemplate): readonly string[] {
+  if (!isCalendarDate(template.date)) {
+    return ["series anchor must be a calendar day in YYYY-MM-DD"];
+  }
+  const errors = [
+    ...validateRoutineItem(materializeOccurrence(template, template.date)),
+    ...validateRecurrence(template.recurrence),
+  ];
+  if (template.exdates !== undefined) {
+    for (const date of template.exdates) {
+      if (!isCalendarDate(date)) errors.push(`exdates must be calendar days: ${date}`);
+    }
+  }
+  if (template.rdates !== undefined) {
+    for (const date of template.rdates) {
+      if (!isCalendarDate(date)) errors.push(`rdates must be calendar days: ${date}`);
+    }
+  }
+  return errors;
 }
 
 /**

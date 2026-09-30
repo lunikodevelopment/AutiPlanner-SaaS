@@ -139,6 +139,52 @@ class BuildCommandTests(unittest.TestCase):
         body = api.build_command("create", item=item)
         self.assertEqual(body["item"]["dayPart"], "evening")
 
+    def test_add_series_carries_the_rule(self) -> None:
+        series = api.RoutineTemplate(
+            uid="swimming@example",
+            title="Swimming",
+            date="2026-09-30",
+            day_part="afternoon",
+            recurrence={"freq": "weekly", "byDay": ["WE"]},
+            start="2026-09-30T15:00:00",
+        )
+        body = api.build_command("add_series", series=series)
+        self.assertEqual(body["command"], "add_series")
+        self.assertEqual(body["series"]["recurrence"], {"freq": "weekly", "byDay": ["WE"]})
+        self.assertEqual(body["series"]["dayPart"], "afternoon")
+        self.assertEqual(body["series"]["start"], "2026-09-30T15:00:00")
+
+    def test_a_series_carries_no_completion(self) -> None:
+        """An outcome belongs to one day, so a template must not smuggle one in.
+
+        The API rejects a template that carries status or completedAt, which is
+        why the payload is built from a type that has no such fields.
+        """
+        series = api.RoutineTemplate(
+            uid="meds@example",
+            title="Medication",
+            date="2026-09-30",
+            day_part="morning",
+            recurrence={"freq": "daily"},
+        )
+        payload = series.to_payload()
+        self.assertNotIn("status", payload)
+        self.assertNotIn("completedAt", payload)
+        self.assertNotIn("routineId", payload)
+        self.assertEqual(payload["recurrence"], {"freq": "daily"})
+
+    def test_excluded_dates_survive_the_wire(self) -> None:
+        series = api.RoutineTemplate(
+            uid="meds@example",
+            title="Medication",
+            date="2026-09-30",
+            day_part="morning",
+            recurrence={"freq": "daily"},
+            exdates=["2026-10-05"],
+        )
+        body = api.build_command("add_series", series=series)
+        self.assertEqual(body["series"]["exdates"], ["2026-10-05"])
+
     def test_rejects_an_unknown_command(self) -> None:
         with self.assertRaises(ValueError):
             api.build_command("explode")

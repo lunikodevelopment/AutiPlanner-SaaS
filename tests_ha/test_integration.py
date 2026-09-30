@@ -8,6 +8,7 @@ entities, and services -- without a live server.
 from __future__ import annotations
 
 import pytest
+import voluptuous as vol
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
@@ -81,10 +82,13 @@ class FakeClient:
     async def update(self, uid, patch, **kwargs):
         return await self._record("update", uid, kwargs)
 
-    async def _record(self, command, uid, kwargs):
+    async def add_series(self, series, **kwargs):
+        return await self._record("add_series", series.uid, kwargs, series=series)
+
+    async def _record(self, command, uid, kwargs, **extra):
         if self.command_error is not None:
             raise self.command_error
-        self.commands.append({"command": command, "uid": uid, **kwargs})
+        self.commands.append({"command": command, "uid": uid, **kwargs, **extra})
         return _item(uid, "completed")
 
 
@@ -325,3 +329,88 @@ async def test_an_unreachable_server_raises_a_repair(
         domain == DOMAIN and issue_id.startswith("server_unreachable_")
         for domain, issue_id in issues
     ), issues
+
+
+async def test_add_series_sends_a_rule_and_no_completion(
+    hass: HomeAssistant, fake_client: FakeClient
+) -> None:
+    """A repeating routine is stored as a rule; an outcome belongs to a day."""
+    await _setup(hass)
+    await hass.services.async_call(
+        DOMAIN,
+        "add_series",
+        {
+            "uid": "swimming@example",
+            "title": "Swimming",
+            "date": "2026-09-30",
+            "day_part": "afternoon",
+            "recurrence": {"freq": "weekly", "byDay": ["WE"]},
+            "start": "2026-09-30T15:00:00",
+            "entity_id": "sensor.routine_agenda",
+        },
+        blocking=True,
+    )
+    call = fake_client.commands[-1]
+    assert call["command"] == "add_series"
+    assert call["uid"] == "swimming@example"
+    series = call["series"]
+    assert series.recurrence == {"freq": "weekly", "byDay": ["WE"]}
+    assert series.day_part == "afternoon"
+    # The template is not an item: nothing about completion travels with it.
+    payload = series.to_payload()
+    assert "status" not in payload
+    assert "completedAt" not in payload
+    assert payload["dayPart"] == "afternoon"
+
+
+async def test_add_series_requires_a_rule(hass: HomeAssistant, fake_client: FakeClient) -> None:
+    await _setup(hass)
+    with pytest.raises(vol.Invalid):
+        await hass.services.async_call(
+            DOMAIN,
+            "add_series",
+            {
+                "uid": "swimming@example",
+                "title": "Swimming",
+                "date": "2026-09-30",
+                "day_part": "afternoon",
+                "entity_id": "sensor.routine_agenda",
+            },
+            blocking=True,
+        )
+
+
+async def test_a_daily_series_is_accepted_as_well_as_weekly(
+    hass: HomeAssistant, fake_client: FakeClient
+) -> None:
+    """The same routine every day is a rule, not seven items."""
+    await _setup(hass)
+    await hass.services.async_call(
+        DOMAIN,
+        "add_series",
+        {
+            "uid": "meds@example",
+            "title": "Morning medication",
+            "date": "2026-09-30",
+            "day_part": "morning",
+            "recurrence": {"freq": "daily"},
+            "entity_id": "sensor.routine_agenda",
+        },
+        blocking=True,
+    )
+    assert fake_client.commands[-1]["series"].recurrence == {"freq": "daily"}
+
+
+async def test_removing_a_repeat_is_an_ordinary_delete(
+    hass: HomeAssistant, fake_client: FakeClient
+) -> None:
+    """Removing a repeat deletes the series by its own uid, as the server does."""
+    await _setup(hass)
+    await hass.services.async_call(
+        DOMAIN,
+        "delete",
+        {"uid": "swimming@example", "entity_id": "sensor.routine_agenda"},
+        blocking=True,
+    )
+    assert fake_client.commands[-1]["command"] == "delete"
+    assert fake_client.commands[-1]["uid"] == "swimming@example"

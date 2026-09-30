@@ -64,7 +64,8 @@ for (const name of [
 }
 
 // Booting the card: importing it defines the custom element.
-const { actionsFor, addDays, findAgendaEntity, localToday } = await import("../src/index.js");
+const { actionsFor, addDays, findAgendaEntity, localToday, weekdayCode, weekdayName } =
+  await import("../src/index.js");
 
 const AGENDA = "sensor.routine_agenda";
 
@@ -360,6 +361,172 @@ test("a day that does not exist is discarded by the field, so the item lands on 
   const call = hass.calls.find((candidate) => candidate.service === "create");
   assert.ok(call !== undefined, "the item is still added");
   assert.equal(call.data["date"], localToday("UTC"));
+});
+
+test("a weekly repeat is sent as a rule anchored on the chosen weekday", async () => {
+  const hass = new FakeHass();
+  hass.states[AGENDA] = agendaState([]);
+  const card = mount(hass);
+
+  click(card, '[data-act="toggle-add"]');
+  const form = card.shadowRoot?.querySelector<HTMLFormElement>("form[data-form]");
+  assert.ok(form !== null && form !== undefined);
+  (card.shadowRoot?.querySelector("#ap-title") as HTMLInputElement).value = "Swimming";
+  // A Wednesday, so the repeat should anchor on WE.
+  (card.shadowRoot?.querySelector("#ap-date") as HTMLInputElement).value = "2026-09-30";
+  const part = card.shadowRoot?.querySelector<HTMLSelectElement>("#ap-part");
+  assert.ok(part !== null && part !== undefined);
+  part.value = "afternoon";
+  const repeat = card.shadowRoot?.querySelector<HTMLSelectElement>("#ap-repeat");
+  assert.ok(repeat !== null && repeat !== undefined);
+  repeat.value = "weekly";
+  (card.shadowRoot?.querySelector("#ap-time") as HTMLInputElement).value = "15:00";
+
+  form.dispatchEvent(new (dom.window.Event)("submit", { bubbles: true, cancelable: true }));
+  await settle();
+
+  const call = hass.calls.find((candidate) => candidate.service === "add_series");
+  assert.ok(call !== undefined, "a repeating item uses add_series, not create");
+  assert.equal(call.data["uid"]?.toString().startsWith("ha-"), true);
+  assert.deepEqual(call.data["recurrence"], { freq: "weekly", byDay: ["WE"] });
+  assert.equal(call.data["date"], "2026-09-30");
+  assert.equal(call.data["day_part"], "afternoon");
+  assert.equal(call.data["start"], "2026-09-30T15:00:00");
+  // A template carries no outcome: completion belongs to a day.
+  assert.equal(call.data["status"], undefined);
+  assert.equal(hass.calls.some((candidate) => candidate.service === "create"), false);
+});
+
+test("every day is a daily rule rather than seven items", async () => {
+  const hass = new FakeHass();
+  hass.states[AGENDA] = agendaState([]);
+  const card = mount(hass);
+
+  click(card, '[data-act="toggle-add"]');
+  const form = card.shadowRoot?.querySelector<HTMLFormElement>("form[data-form]");
+  assert.ok(form !== null && form !== undefined);
+  (card.shadowRoot?.querySelector("#ap-title") as HTMLInputElement).value = "Morning medication";
+  (card.shadowRoot?.querySelector("#ap-repeat") as HTMLSelectElement).value = "daily";
+
+  form.dispatchEvent(new (dom.window.Event)(("submit"), { bubbles: true, cancelable: true }));
+  await settle();
+
+  const call = hass.calls.find((candidate) => candidate.service === "add_series");
+  assert.ok(call !== undefined);
+  assert.deepEqual(call.data["recurrence"], { freq: "daily" });
+  assert.equal(hass.calls.filter((c) => c.service === "create").length, 0);
+});
+
+test("the default stays a one-off", async () => {
+  const hass = new FakeHass();
+  hass.states[AGENDA] = agendaState([]);
+  const card = mount(hass);
+
+  click(card, '[data-act="toggle-add"]');
+  const form = card.shadowRoot?.querySelector<HTMLFormElement>("form[data-form]");
+  assert.ok(form !== null && form !== undefined);
+  (card.shadowRoot?.querySelector("#ap-title") as HTMLInputElement).value = "Dentist";
+  assert.equal(
+    (card.shadowRoot?.querySelector("#ap-repeat") as HTMLSelectElement).value,
+    "none",
+  );
+
+  form.dispatchEvent(new (dom.window.Event)("submit", { bubbles: true, cancelable: true }));
+  await settle();
+
+  assert.equal(hass.calls.some((candidate) => candidate.service === "add_series"), false);
+  assert.ok(hass.calls.some((candidate) => candidate.service === "create"));
+});
+
+test("the weekday wording follows the date as it is edited", () => {
+  const hass = new FakeHass();
+  hass.states[AGENDA] = agendaState([]);
+  const card = mount(hass);
+  click(card, '[data-act="toggle-add"]');
+
+  const date = card.shadowRoot?.querySelector("#ap-date") as HTMLInputElement;
+  const repeat = card.shadowRoot?.querySelector("#ap-repeat") as HTMLSelectElement;
+  const select = card.shadowRoot?.querySelector("#ap-repeat-weekly");
+
+  // 2026-09-30 is a Wednesday, 2026-10-05 a Monday.
+  date.value = "2026-09-30";
+  date.dispatchEvent(new (dom.window.Event)("change", { bubbles: true }));
+  assert.equal(select?.textContent, "Every Wednesday");
+
+  date.value = "2026-10-05";
+  date.dispatchEvent(new (dom.window.Event)("change", { bubbles: true }));
+  assert.equal(select?.textContent, "Every Monday");
+
+  repeat.value = "weekly";
+  repeat.dispatchEvent(new (dom.window.Event)("change", { bubbles: true }));
+  const note = card.shadowRoot?.querySelector(".repeat-note");
+  assert.equal(note?.textContent, "Repeats every Monday");
+  assert.equal(note?.hasAttribute("hidden"), false);
+});
+
+test("a repeating day is marked, and stopping it asks first", async () => {
+  const hass = new FakeHass();
+  const today = localToday("UTC");
+  hass.states[AGENDA] = agendaState([
+    item({ uid: `swimming@example:${today}`, routineId: "swimming@example", title: "Swimming" }),
+  ]);
+  const card = mount(hass);
+
+  const marker = card.shadowRoot?.querySelector('[data-act="stop-repeat"]');
+  assert.ok(marker !== null && marker !== undefined, "a repeating day is marked");
+  assert.equal(marker.getAttribute("data-series"), "swimming@example");
+
+  // The first tap must not remove anything.
+  click(card, '[data-act="stop-repeat"]');
+  await settle();
+  assert.equal(
+    hass.calls.some((call) => call.service === "delete"),
+    false,
+    "one tap must not remove a routine",
+  );
+  assert.match(text(card), /Stop repeating\?/);
+
+  // Cancelling puts the usual buttons back.
+  click(card, '[data-act="stop-repeat-no"]');
+  await settle();
+  assert.equal(card.shadowRoot?.querySelector('[data-act="stop-repeat-yes"]'), null);
+  assert.ok(card.shadowRoot?.querySelector('[data-act="complete"]') !== null);
+});
+
+test("confirming removes the whole repeat by its series uid", async () => {
+  const hass = new FakeHass();
+  const today = localToday("UTC");
+  hass.states[AGENDA] = agendaState([
+    item({ uid: `swimming@example:${today}`, routineId: "swimming@example", title: "Swimming" }),
+  ]);
+  const card = mount(hass);
+
+  click(card, '[data-act="stop-repeat"]');
+  await settle();
+  click(card, '[data-act="stop-repeat-yes"]');
+  await settle();
+
+  const call = hass.calls.find((candidate) => candidate.service === "delete");
+  assert.ok(call !== undefined, "the series is deleted");
+  // Not the occurrence: the whole repeat goes.
+  assert.equal(call.data["uid"], "swimming@example");
+});
+
+test("every weekday maps to its own code, Monday first", () => {
+  // 2026-09-28 is a Monday. The mapping is the one thing here that cannot be
+  // reasoned about from the outside, and getting it wrong silently moves every
+  // weekly routine to the wrong day.
+  const week = ["2026-09-28", "2026-09-29", "2026-09-30", "2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04"];
+  assert.deepEqual(week.map((date) => weekdayCode(date)), ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]);
+  assert.deepEqual(week.map((date) => weekdayName(date)), [
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+  ]);
 });
 
 test("helpers", () => {

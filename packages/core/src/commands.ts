@@ -4,12 +4,14 @@ import {
   type RoutineMutationResult,
   type RoutineStatus,
 } from "./model.js";
+import { validateTemplate, type RecurrenceRule, type RoutineTemplate } from "./recurrence.js";
 import { hasExplicitOffset } from "./time.js";
 
 export type CommandErrorCode =
   | "not-found"
   | "duplicate-uid"
   | "invalid-item"
+  | "invalid-template"
   | "invalid-patch"
   | "conflict"
   | "series-completion";
@@ -163,6 +165,71 @@ export function deleteItem(
   };
 }
 
+export interface SeriesMutation {
+  series: readonly RoutineTemplate[];
+  result: { template: RoutineTemplate; changed: boolean };
+}
+
+export interface SeriesDeleteMutation {
+  items: readonly RoutineItem[];
+  series: readonly RoutineTemplate[];
+  template: RoutineTemplate;
+  changed: true;
+}
+
+/**
+ * Stores a repeating template. Occurrences are expanded on read, so nothing
+ * about the future is written now: only the rule.
+ *
+ * The uid must be free among both items and series. A series and an item sharing
+ * a uid would make `delete` ambiguous, since either can be removed by uid.
+ */
+export function addSeries(
+  items: readonly RoutineItem[],
+  series: readonly RoutineTemplate[],
+  template: RoutineTemplate,
+): SeriesMutation {
+  const errors = validateTemplate(template);
+  if (errors.length > 0) {
+    throw new RoutineCommandError("invalid-template", "series is invalid", errors);
+  }
+  if (series.some((existing) => existing.uid === template.uid)) {
+    throw new RoutineCommandError("duplicate-uid", `uid already exists: ${template.uid}`);
+  }
+  if (items.some((existing) => existing.uid === template.uid)) {
+    throw new RoutineCommandError("duplicate-uid", `uid already exists: ${template.uid}`);
+  }
+  return {
+    series: [...series, cloneTemplate(template)],
+    result: { template: cloneTemplate(template), changed: true },
+  };
+}
+
+/**
+ * Removes a series and every occurrence that has been recorded against it.
+ *
+ * Leaving the recorded occurrences behind would turn a deleted repeat into a
+ * scatter of one-off items on the days it used to fall: the repeat would look
+ * gone in the rule while remaining on the calendar.
+ */
+export function deleteSeries(
+  items: readonly RoutineItem[],
+  series: readonly RoutineTemplate[],
+  uid: string,
+): SeriesDeleteMutation {
+  const template = series.find((candidate) => candidate.uid === uid);
+  if (!template) {
+    throw new RoutineCommandError("not-found", `no series with uid ${uid}`);
+  }
+  const prefix = `${uid}:`;
+  return {
+    items: items.filter((item) => !item.uid.startsWith(prefix)),
+    series: series.filter((candidate) => candidate.uid !== uid),
+    template,
+    changed: true,
+  };
+}
+
 export const commands = {
   complete,
   markMissed,
@@ -171,6 +238,8 @@ export const commands = {
   create,
   update,
   delete: deleteItem,
+  addSeries,
+  deleteSeries,
 } as const;
 
 function applyStatus(
@@ -319,6 +388,47 @@ function copyTags(
   tags: readonly string[] | undefined,
 ): readonly string[] | undefined {
   return tags ? [...tags] : undefined;
+}
+
+/**
+ * A stored series must not share structure with the caller's object, or a later
+ * edit in the calling process could change a rule the calendar already holds.
+ * `assign` is for items, so each field is copied explicitly here.
+ */
+function cloneTemplate(template: RoutineTemplate): RoutineTemplate {
+  const next: RoutineTemplate = {
+    uid: template.uid,
+    title: template.title,
+    date: template.date,
+    dayPart: template.dayPart,
+    recurrence: cloneRecurrence(template.recurrence),
+  };
+  const optional: Record<string, unknown> = {
+    description: template.description,
+    start: template.start,
+    due: template.due,
+    timezone: template.timezone,
+    order: template.order,
+    tags: copyTags(template.tags),
+    extensions: copyExtensions(template.extensions),
+    exdates: template.exdates ? [...template.exdates] : undefined,
+    rdates: template.rdates ? [...template.rdates] : undefined,
+  };
+  for (const [key, value] of Object.entries(optional)) {
+    if (value !== undefined) {
+      (next as unknown as Record<string, unknown>)[key] = value;
+    }
+  }
+  return next;
+}
+
+function cloneRecurrence(rule: RecurrenceRule): RecurrenceRule {
+  const next: RecurrenceRule = { freq: rule.freq };
+  if (rule.interval !== undefined) next.interval = rule.interval;
+  if (rule.count !== undefined) next.count = rule.count;
+  if (rule.until !== undefined) next.until = rule.until;
+  if (rule.byDay !== undefined) next.byDay = [...rule.byDay];
+  return next;
 }
 
 function copyExtensions(

@@ -20,6 +20,7 @@ from .api import (
     AutiPlannerAuthError,
     AutiPlannerConnectionError,
     RoutineItem,
+    RoutineTemplate,
     Session,
     build_command,
     error_from_response,
@@ -160,6 +161,18 @@ class AutiPlannerClient:
             "create", calendar_id, item=item, expected_revision=expected_revision
         )
 
+    async def add_series(
+        self,
+        series: RoutineTemplate,
+        *,
+        expected_revision: int | None = None,
+        calendar_id: str | None = None,
+    ) -> RoutineItem | None:
+        """Stores a repeating routine. The server expands it on read."""
+        return await self._command(
+            "add_series", calendar_id, series=series, expected_revision=expected_revision
+        )
+
     async def update(
         self,
         uid: str,
@@ -185,6 +198,7 @@ class AutiPlannerClient:
         completed_at: str | None = None,
         expected_revision: int | None = None,
         item: RoutineItem | None = None,
+        series: RoutineTemplate | None = None,
         patch: dict[str, Any] | None = None,
     ) -> RoutineItem | None:
         body = build_command(
@@ -193,6 +207,7 @@ class AutiPlannerClient:
             completed_at=completed_at,
             expected_revision=expected_revision,
             item=item,
+            series=series,
             patch=patch,
         )
         if calendar_id:
