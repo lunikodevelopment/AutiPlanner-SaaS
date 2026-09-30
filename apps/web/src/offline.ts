@@ -138,6 +138,10 @@ export function applyLocally(
         const outcome = createRoutineItem(items, command.item);
         return { items: outcome.items, item: outcome.result.item };
       }
+      case "delete": {
+        if (command.uid === undefined) break;
+        return { items: items.filter((item) => item.uid !== command.uid), item: null };
+      }
       case "add_series": {
         if (command.series === undefined) break;
         // Without a window there is nothing to expand into, and inventing one

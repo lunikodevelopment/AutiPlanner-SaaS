@@ -151,9 +151,14 @@ test("an item is offered exactly the actions its outcome allows", async () => {
   for (const row of rows) {
     byStatus.set(row.getAttribute("data-status") ?? "", actionsForRow(row));
   }
-  assert.deepEqual(byStatus.get("pending"), ["complete", "mark_missed", "skip"]);
+  // Outcomes first, then the remove control every row carries.
+  assert.deepEqual(byStatus.get("pending"), ["complete", "mark_missed", "skip", "remove-item"]);
   for (const status of ["completed", "missed", "skipped"]) {
-    assert.deepEqual(byStatus.get(status), ["reset"], `${status} should only offer reset`);
+    assert.deepEqual(
+      byStatus.get(status),
+      ["reset", "remove-item"],
+      `${status} should only offer reset`,
+    );
   }
 });
 

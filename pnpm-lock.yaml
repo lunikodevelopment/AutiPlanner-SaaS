@@ -32,6 +32,9 @@ importers:
       '@autiplanner/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@autiplanner/icons':
+        specifier: workspace:*
+        version: link:../../packages/icons
     devDependencies:
       '@types/jsdom':
         specifier: ^30.0.0
@@ -48,6 +51,9 @@ importers:
       '@autiplanner/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@autiplanner/icons':
+        specifier: workspace:*
+        version: link:../../packages/icons
     devDependencies:
       '@types/jsdom':
         specifier: ^30.0.0

@@ -8,6 +8,7 @@ import { ApiError, isRetryable, HttpApi } from "./api.js";
 import { applyLocally, flushPending, type FlushOutcome } from "./offline.js";
 import { newId, openLocalStore, type LocalStore, type PendingCommand } from "./store.js";
 import { nowSeconds } from "./time.js";
+import { ROUTINE_ICONS, routineIconSvg } from "@autiplanner/icons";
 import {
   addDays,
   clockOf,
@@ -57,6 +58,10 @@ const state = {
   queuedUids: new Set<string>(),
   /** The selected outcome persists while the update is in flight. */
   busy: false,
+  /** The item currently asking whether to be removed. */
+  pendingRemove: null as string | null,
+  /** The icon chosen for the next item, or "" for none. */
+  newIcon: "",
 };
 
 /** The calendar whose subscription URL the subscribe section is showing. */
@@ -102,7 +107,12 @@ function render(): void {
       } else {
         for (const item of section.items) {
           list.append(
-            renderRow(item, state.queuedUids.has(item.uid), { onAction: handleAction }),
+            renderRow(item, state.queuedUids.has(item.uid), {
+              onAction: handleAction,
+              onRemove: handleRemove,
+              confirmsRemove: (candidate) => state.pendingRemove === candidate.uid,
+              onRemoveAnswer: handleRemoveAnswer,
+            }),
           );
         }
       }
@@ -221,6 +231,83 @@ async function sync(): Promise<void> {
 
 // ------------------------------------------------------------------ actions
 
+/**
+ * Builds the icon picker from the shared set: those icons, in that order, and
+ * nothing else.
+ *
+ * Buttons rather than a select, because the choice is a picture; each is named
+ * by what it means and reports whether it is chosen, so the state is not carried
+ * by the highlight alone.
+ */
+function renderIconPicker(): void {
+  const picker = document.getElementById("icon-picker");
+  if (picker === null) return;
+  picker.replaceChildren();
+  const add = (name: string, title: string): void => {
+    const choice = document.createElement("button");
+    choice.type = "button";
+    choice.className = "icon-choice";
+    choice.dataset.icon = name;
+    choice.setAttribute("role", "radio");
+    choice.setAttribute("aria-label", title);
+    choice.title = title;
+    choice.innerHTML = name === "" ? "\u2205" : routineIconSvg(name, 20);
+    choice.addEventListener("click", () => {
+      state.newIcon = name;
+      renderIconPicker();
+    });
+    picker.append(choice);
+  };
+  add("", "No icon");
+  for (const icon of ROUTINE_ICONS) add(icon.name, icon.title);
+  for (const choice of picker.querySelectorAll<HTMLButtonElement>(".icon-choice")) {
+    const chosen = (choice.dataset.icon ?? "") === state.newIcon;
+    choice.classList.toggle("chosen", chosen);
+    choice.setAttribute("aria-checked", String(chosen));
+  }
+}
+
+/** Asking to remove a row does not remove it; it asks. */
+function handleRemove(item: RoutineItem): void {
+  state.pendingRemove = item.uid;
+  render();
+}
+
+function handleRemoveAnswer(item: RoutineItem, remove: boolean): void {
+  state.pendingRemove = null;
+  if (!remove) {
+    render();
+    return;
+  }
+  void removeItem(item);
+}
+
+/**
+ * Removes one routine item.
+ *
+ * A day of a repeating routine is a day, not the routine: the server leaves that
+ * date out of the rule and the rest carries on. Ending the repeat is a separate
+ * action for a separate intent.
+ */
+async function removeItem(item: RoutineItem): Promise<void> {
+  if (state.busy) return;
+  state.busy = true;
+  try {
+    const command: PendingCommand = {
+      id: newId(),
+      command: "delete",
+      uid: item.uid,
+      queuedAt: nowSeconds(),
+      expectedRevision: state.revision,
+    };
+    await queue(command);
+    render();
+    if (state.online) await sync();
+  } finally {
+    state.busy = false;
+  }
+}
+
 async function handleAction(item: RoutineItem, action: ItemAction): Promise<void> {
   if (state.busy) return;
   state.busy = true;
@@ -290,6 +377,7 @@ async function handleAdd(form: HTMLFormElement): Promise<void> {
       date,
       dayPart: dayPart as RoutineItem["dayPart"],
       status: "pending",
+      ...(state.newIcon === "" ? {} : { icon: state.newIcon }),
       ...(start === undefined ? {} : { start }),
     };
     const command: PendingCommand = {
@@ -310,6 +398,7 @@ async function handleAdd(form: HTMLFormElement): Promise<void> {
       dayPart: dayPart as RoutineItem["dayPart"],
       recurrence:
         repeat === "weekly" ? { freq: "weekly", byDay: [weekdayCodeOf(date) ?? "MO"] } : { freq: "daily" },
+      ...(state.newIcon === "" ? {} : { icon: state.newIcon }),
       ...(start === undefined ? {} : { start }),
     };
     const command: PendingCommand = {
@@ -325,6 +414,8 @@ async function handleAdd(form: HTMLFormElement): Promise<void> {
   }
 
   form.reset();
+  state.newIcon = "";
+  renderIconPicker();
   render();
   if (state.online) await sync();
 }
@@ -489,6 +580,9 @@ function wireEvents(): void {
 async function start(): Promise<void> {
   store = await openLocalStore();
   wireEvents();
+  // Built once from the shared set, so the picker cannot drift from the icons
+  // the card offers.
+  renderIconPicker();
 
   // Render the cached routine first, so the app opens instantly and works with
   // no network at all.

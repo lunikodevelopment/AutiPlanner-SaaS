@@ -10,6 +10,7 @@
  * Outcome and day part come from `@autiplanner/core`, the same package the PWA
  * and the integration use, so the four states cannot drift apart here.
  */
+import { ROUTINE_ICONS, findRoutineIcon, routineIconSvg } from "@autiplanner/icons";
 import {
   DAY_PART_HEADING,
   DAY_PARTS,
@@ -68,6 +69,7 @@ interface Draft {
   dayPart: DayPart;
   time: string;
   repeat: RepeatChoice;
+  icon: string;
 }
 
 /** What the add form offers. `none` keeps an item a one-off occurrence. */
@@ -90,9 +92,11 @@ export class AutiPlannerCard extends HTMLElement {
   #message = "";
   #messageIsError = false;
   #editorOpen = false;
-  #draft: Draft = { title: "", date: "", dayPart: "morning", time: "", repeat: "none" };
+  #draft: Draft = { title: "", date: "", dayPart: "morning", time: "", repeat: "none", icon: "" };
   /** The series whose removal is waiting to be confirmed, if any. */
   #confirmStop: string | null = null;
+  /** The item whose removal is waiting to be confirmed, if any. */
+  #confirmRemove: string | null = null;
 
   constructor() {
     super();
@@ -246,13 +250,21 @@ export class AutiPlannerCard extends HTMLElement {
     const clock = formatClock(item.start ?? item.due ?? "");
     const meta = [STATUS_ACCESSIBLE_LABEL[status], clock].filter((part) => part !== undefined && part !== "").join(" · ");
     const disabled = this.#busy ? " disabled" : "";
-    const buttons = actionsFor(status)
-      .map(
-        (button) =>
-          `<button type="button" class="act" data-act="${button.action}" data-uid="${escape(item.uid)}"${disabled}
+    const buttons =
+      actionsFor(status)
+        .map(
+          (button) =>
+            `<button type="button" class="act" data-act="${button.action}" data-uid="${escape(item.uid)}"${disabled}
              aria-label="Mark ${escape(item.title)} ${escape(button.word)}">${button.glyph}</button>`,
-      )
-      .join("");
+        )
+        .join("") +
+      `<button type="button" class="act remove" data-act="remove-item" data-uid="${escape(item.uid)}"${disabled}
+         aria-label="Remove ${escape(item.title)}">&#10005;</button>`;
+    const icon = findRoutineIcon(item.icon);
+    const iconHtml =
+      icon === undefined
+        ? ""
+        : `<span class="icon" title="${escape(icon.title)}">${routineIconSvg(icon.name, 22)}</span>`;
     const repeat =
       item.routineId === undefined
         ? ""
@@ -261,7 +273,13 @@ export class AutiPlannerCard extends HTMLElement {
     // Stopping a repeat removes every day it falls on, so the first tap only
     // asks. One stray tap on a shared dashboard must not undo a routine.
     const acts =
-      item.routineId !== undefined && this.#confirmStop === item.routineId
+      this.#confirmRemove === item.uid
+        ? `<span class="confirm" role="status">
+             <span class="confirm-text">Remove?</span>
+             <button type="button" class="act" data-act="remove-item-yes" data-uid="${escape(item.uid)}" aria-label="Yes, remove ${escape(item.title)}">Yes</button>
+             <button type="button" class="act" data-act="remove-item-no" data-uid="${escape(item.uid)}" aria-label="Keep ${escape(item.title)}">No</button>
+           </span>`
+        : item.routineId !== undefined && this.#confirmStop === item.routineId
         ? `<span class="confirm" role="status">
              <span class="confirm-text">Stop repeating?</span>
              <button type="button" class="act" data-act="stop-repeat-yes" data-series="${escape(item.routineId)}" aria-label="Yes, stop repeating ${escape(item.title)}">Yes</button>
@@ -270,6 +288,7 @@ export class AutiPlannerCard extends HTMLElement {
         : `<span class="acts">${buttons}</span>`;
     return `<li class="item" data-status="${status}"${item.routineId === undefined ? "" : ` data-series="${escape(item.routineId)}"`}>
       <span class="glyph" aria-hidden="true">${STATUS_SYMBOL[status]}</span>
+      ${iconHtml}
       <span class="main">
         <span class="name">${escape(item.title)}${repeat}</span>
         <span class="meta">${escape(meta)}</span>
@@ -324,9 +343,41 @@ export class AutiPlannerCard extends HTMLElement {
           <select id="ap-repeat" name="repeat">${repeats}</select>
         </div>
       </div>
+      <fieldset class="icons">
+        <legend>Icon <span class="hint">(optional)</span></legend>
+        <div class="icon-grid" role="radiogroup" aria-label="Routine icon">
+          ${this.#renderIconChoices()}
+        </div>
+      </fieldset>
       <p class="repeat-note"${note === "" ? " hidden" : ""}>${escape(note)}</p>
       <button type="submit"${this.#busy ? " disabled" : ""}>Add item</button>
+      <input type="hidden" name="icon" value="${escape(draft.icon)}" />
     </form>`;
+  }
+
+  /**
+   * The picker: the icons the set offers, and nothing else.
+   *
+   * A grid of buttons rather than a select, because the choice is a picture: a
+   * list of names would make the household read all of them to find one. Each
+   * button is named by what the icon means, and the chosen one is reported as
+   * `aria-checked`, so the state is not carried by the highlight alone.
+   */
+  #renderIconChoices(): string {
+    const none =
+      `<button type="button" class="icon-choice${this.#draft.icon === "" ? " chosen" : ""}"` +
+      ` data-act="pick-icon" data-icon="" role="radio" aria-checked="${this.#draft.icon === ""}"` +
+      ` aria-label="No icon" title="No icon">&#8709;</button>`;
+    const choices = ROUTINE_ICONS.map((icon) => {
+      const chosen = this.#draft.icon === icon.name;
+      return (
+        `<button type="button" class="icon-choice${chosen ? " chosen" : ""}"` +
+        ` data-act="pick-icon" data-icon="${escape(icon.name)}" role="radio"` +
+        ` aria-checked="${chosen}" aria-label="${escape(icon.title)}" title="${escape(icon.title)}">` +
+        `${routineIconSvg(icon.name, 20)}</button>`
+      );
+    }).join("");
+    return none + choices;
   }
 
   // --------------------------------------------------------------- events
@@ -348,6 +399,12 @@ export class AutiPlannerCard extends HTMLElement {
       void this.#refresh();
       return;
     }
+    if (action === "pick-icon") {
+      const icon = trigger.dataset["icon"] ?? "";
+      this.#draft = { ...this.#draft, icon };
+      this.#renderIconGrid();
+      return;
+    }
     if (action === "stop-repeat") {
       // Asks first; see the confirm strip in the row.
       this.#confirmStop = series ?? null;
@@ -357,6 +414,18 @@ export class AutiPlannerCard extends HTMLElement {
     if (action === "stop-repeat-no") {
       this.#confirmStop = null;
       this.#render();
+      return;
+    }
+    if (action === "remove-item") {
+      this.#confirmRemove = uid ?? null;
+      return this.#render();
+    }
+    if (action === "remove-item-no") {
+      this.#confirmRemove = null;
+      return this.#render();
+    }
+    if (action === "remove-item-yes") {
+      if (uid !== undefined) this.#removeItem(uid);
       return;
     }
     if (action === "stop-repeat-yes") {
@@ -387,12 +456,53 @@ export class AutiPlannerCard extends HTMLElement {
    * weekly routine would land on, and that word comes from the date field. Only
    * that text is rewritten: re-rendering the form here would drop focus.
    */
+  /**
+   * Repaints the picker in place after a choice.
+   *
+   * A full render would rebuild the form and take the cursor out of the title
+   * field, which is exactly where a household is likely to be.
+   */
+  #renderIconGrid(): void {
+    const grid = this.#root.querySelector(".icon-grid");
+    if (grid === null) return;
+    grid.innerHTML = this.#renderIconChoices();
+    const hidden = this.#root.querySelector<HTMLInputElement>('input[name="icon"]');
+    if (hidden !== null) hidden.value = this.#draft.icon;
+  }
+
+  /**
+   * Removes one routine item, once the household has said so.
+   *
+   * A day of a repeating routine is a day, not the routine: the server excludes
+   * that date, and the rest of the repeat carries on. Removing the whole repeat
+   * is the ↻ control.
+   */
+  async #removeItem(uid: string): Promise<void> {
+    if (this.#busy) return;
+    this.#busy = true;
+    this.#message = "";
+    this.#messageIsError = false;
+    try {
+      await this.#service("delete", { uid });
+      this.#confirmRemove = null;
+      await this.#refresh();
+    } catch (error) {
+      this.#message = errorText(error);
+      this.#messageIsError = true;
+    } finally {
+      this.#busy = false;
+      this.#render();
+    }
+  }
+
   #onChange(event: Event): void {
     const target = event.target;
     if (!(target instanceof Element)) return;
     const form = target.closest<HTMLFormElement>("form[data-form='add']");
     if (form === null) return;
     const data = new FormData(form);
+    const icon = String(data.get("icon") ?? "");
+    this.#draft = { ...this.#draft, icon };
     const chosen = String(data.get("date") ?? "").trim();
     const date = chosen === "" ? localToday(this.#hass?.config.time_zone) : chosen;
     const repeat = String(data.get("repeat") ?? "none");
@@ -441,6 +551,7 @@ export class AutiPlannerCard extends HTMLElement {
     const dayPart = String(data.get("dayPart") ?? "morning");
     const time = String(data.get("time") ?? "").trim();
     const repeat = String(data.get("repeat") ?? "none");
+    const icon = String(data.get("icon") ?? "");
 
     if (title === "" || !isDayPart(dayPart)) {
       this.#message = "A title and a day part are required.";
@@ -482,6 +593,7 @@ export class AutiPlannerCard extends HTMLElement {
           status: "pending",
         };
         if (start !== undefined) payload["start"] = start;
+        if (icon !== "") payload["icon"] = icon;
         await this.#service("create", payload);
       } else {
         // A repeating routine is stored as a rule, not as a pile of days: the
@@ -499,9 +611,10 @@ export class AutiPlannerCard extends HTMLElement {
               : { freq: "daily" },
         };
         if (start !== undefined) payload["start"] = start;
+        if (icon !== "") payload["icon"] = icon;
         await this.#service("add_series", payload);
       }
-      this.#draft = { title: "", date, dayPart, time, repeat: "none" };
+      this.#draft = { title: "", date, dayPart, time, repeat: "none", icon };
       this.#editorOpen = false;
       await this.#refresh();
     } catch (error) {
@@ -735,6 +848,21 @@ const STYLES = `
   .confirm { display: flex; align-items: center; gap: 4px; }
   .confirm-text { font-size: 0.78rem; color: var(--secondary-text-color, #727272); white-space: nowrap; }
   .add .repeat-note { margin: 0; font-size: 0.78rem; color: var(--secondary-text-color, #727272); }
+  .act.remove { color: var(--secondary-text-color, #727272); }
+  .act.remove:hover { background: var(--error-color, #db4437); color: #fff; }
+  .icon { display: inline-flex; align-items: center; margin-right: 4px;
+          color: var(--secondary-text-color, #727272); vertical-align: -3px; }
+  .icons { border: none; margin: 0; padding: 0; }
+  .icons legend { font-size: 0.78rem; color: var(--secondary-text-color, #727272); padding: 0; }
+  .icon-grid { display: flex; flex-wrap: wrap; gap: 2px; max-height: 168px; overflow-y: auto;
+               padding: 4px; border: 1px solid var(--divider-color, #e0e0e0); border-radius: 8px; }
+  .icon-choice { display: inline-flex; align-items: center; justify-content: center;
+                 width: 40px; height: 40px; border-radius: 8px; cursor: pointer;
+                 border: 1px solid transparent; background: none;
+                 color: var(--primary-text-color, #212121); }
+  .icon-choice:hover { background: var(--secondary-background-color, #ececec); }
+  .icon-choice.chosen { border-color: var(--primary-color, #03a9f4);
+                        background: var(--secondary-background-color, #ececec); }
   .empty { font-size: 0.85rem; color: var(--secondary-text-color, #727272); padding: 4px 8px; }
   .message, .notice { margin-top: 10px; font-size: 0.85rem; padding: 8px 10px; border-radius: 8px;
                       background: var(--secondary-background-color, #ececec);

@@ -15,6 +15,7 @@ import path from "node:path";
 import test from "node:test";
 import { JSDOM } from "jsdom";
 import { expandSeries, type RoutineItem, type RoutineTemplate } from "@autiplanner/core";
+import { ROUTINE_ICONS } from "@autiplanner/icons";
 
 interface FakeItem {
   uid: string;
@@ -120,6 +121,21 @@ class FakeApi {
       this.revision += 1;
       if (typeof key === "string") this.applied.add(key);
       return json(200, { item, changed: true, revision: this.revision });
+    }
+
+    if (name === "delete") {
+      // Mirrors the server: an item goes, and a day of a repeat is excluded from
+      // the rule rather than being something that could be deleted.
+      const uid = String(body.uid ?? "");
+      this.items = this.items.filter((candidate) => candidate.uid !== uid);
+      for (const template of this.series) {
+        if (!uid.startsWith(`${template.uid}:`)) continue;
+        const date = uid.slice(template.uid.length + 1);
+        template.exdates = [...new Set([...(template.exdates ?? []), date])].sort();
+      }
+      this.revision += 1;
+      if (typeof key === "string") this.applied.add(key);
+      return json(200, { item: null, changed: true, revision: this.revision });
     }
 
     const item = this.items.find((candidate) => candidate.uid === body.uid);
@@ -384,6 +400,126 @@ function sentCommands(): Record<string, unknown>[] {
     .map((call) => call.body ?? {});
 }
 
+test("the picker offers exactly the routine icon set", async () => {
+  const picker = dom.window.document.getElementById("icon-picker");
+  const choices = [...(picker?.querySelectorAll<HTMLButtonElement>(".icon-choice") ?? [])];
+  const names = choices.map((choice) => choice.dataset.icon ?? "");
+  assert.equal(names[0], "", "there is a way to have no icon");
+  assert.deepEqual(names.slice(1), ROUTINE_ICONS.map((icon) => icon.name));
+  assert.equal(names.length, ROUTINE_ICONS.length + 1);
+
+  for (const choice of choices) {
+    assert.ok((choice.getAttribute("aria-label") ?? "").length > 0, "each is named");
+    assert.equal(choice.getAttribute("role"), "radio");
+  }
+  assert.equal(choices[0]?.getAttribute("aria-label"), "No icon");
+  // An item without an icon is the default, and it says so.
+  assert.equal(choices[0]?.getAttribute("aria-checked"), "true");
+  for (const choice of choices.slice(1)) {
+    assert.equal(choice.getAttribute("aria-checked"), "false");
+  }
+});
+
+test("choosing an icon sends it with the item, and the row draws it", async () => {
+  const picker = dom.window.document.getElementById("icon-picker") as HTMLElement;
+  const chosen = (): HTMLButtonElement | null =>
+    picker.querySelector<HTMLButtonElement>('[data-icon="pill"]');
+  assert.ok(chosen() !== null, "the pill icon should be offered");
+  chosen()?.click();
+  // Re-queried: choosing redraws the picker, so the node held before the click
+  // is no longer the one on the page.
+  assert.equal(chosen()?.getAttribute("aria-checked"), "true");
+  assert.ok(chosen()?.classList.contains("chosen"));
+
+  const title = dom.window.document.getElementById("new-title") as HTMLInputElement;
+  title.value = "Take medication";
+  const before = sentCommands().length;
+  el<HTMLFormElement>("add-form").dispatchEvent(
+    new dom.window.Event("submit", { bubbles: true, cancelable: true }),
+  );
+
+  const carriesIcon = (sent: Record<string, unknown>): boolean => {
+    const item = sent["item"] as { icon?: string } | undefined;
+    const series = sent["series"] as { icon?: string } | undefined;
+    return item?.icon === "pill" || series?.icon === "pill";
+  };
+  await until(() => sentCommands().slice(before).some(carriesIcon), "the icon to reach the server");
+  await settle();
+
+  // The choice is cleared for the next item, so it is not silently reused.
+  assert.equal(chosen()?.getAttribute("aria-checked"), "false");
+
+  // And the row it produced draws its icon, named by what the icon means.
+  const icon = [...dom.window.document.querySelectorAll(".item")]
+    .find((row) => (row.textContent ?? "").includes("Take medication"))
+    ?.querySelector(".icon");
+  assert.ok(icon !== null && icon !== undefined, "the row should draw its icon");
+  assert.match(icon.innerHTML, /<svg/);
+  assert.equal(icon.getAttribute("aria-hidden"), "true");
+  assert.equal(icon.getAttribute("title"), "Take medication");
+  // The routine's own words are still there; the icon does not replace them.
+  assert.match(icon.parentElement?.textContent ?? "", /Take medication/);
+});
+
+test("removing an item asks first, and then removes it", async () => {
+  const rowsFor = (title: string): HTMLElement | undefined =>
+    [...dom.window.document.querySelectorAll<HTMLElement>(".item")].find((row) =>
+      (row.textContent ?? "").includes(title),
+    );
+
+  const target = rowsFor("Take medication");
+  assert.ok(target !== undefined, "the routine to remove should be listed");
+  const bystander = [...dom.window.document.querySelectorAll<HTMLElement>(".item")].find(
+    (row) => !(row.textContent ?? "").includes("Take medication"),
+  );
+  assert.ok(bystander !== undefined, "another routine should be listed to leave alone");
+  const bystanderTitle = (bystander.textContent ?? "").trim().slice(0, 8);
+
+  const deletesBefore = sentCommands().filter((sent) => sent.command === "delete").length;
+  const remove = target.querySelector<HTMLButtonElement>("button.remove");
+  assert.ok(remove !== null, "each row offers a remove control");
+
+  remove.click();
+  await settle();
+  // The first tap only asks.
+  assert.equal(
+    sentCommands().filter((sent) => sent.command === "delete").length,
+    deletesBefore,
+    "one tap must not remove anything",
+  );
+  assert.match(el("agenda").textContent ?? "", /Remove\?/);
+
+  const answer = (label: string): void => {
+    const button = [
+      ...dom.window.document.querySelectorAll<HTMLButtonElement>(".confirm button"),
+    ].find((candidate) => candidate.textContent === label);
+    assert.ok(button !== undefined, `the ${label} answer should be offered`);
+    button.click();
+  };
+
+  answer("No");
+  await settle();
+  assert.doesNotMatch(el("agenda").textContent ?? "", /Remove\?/);
+  assert.ok(rowsFor("Take medication") !== undefined, "declining keeps the routine");
+
+  const again = rowsFor("Take medication")?.querySelector<HTMLButtonElement>("button.remove");
+  assert.ok(again !== null && again !== undefined);
+  again.click();
+  await settle();
+  answer("Yes");
+
+  await until(
+    () => sentCommands().filter((sent) => sent.command === "delete").length > deletesBefore,
+    "the removal to reach the server",
+  );
+  await settle();
+
+  assert.equal(rowsFor("Take medication"), undefined, "the removed routine is gone");
+  assert.ok(rowsFor(bystanderTitle) !== undefined, "removing one routine leaves the others");
+  const removed = sentCommands().filter((sent) => sent.command === "delete").at(-1);
+  assert.ok(String(removed?.["uid"] ?? "").length > 0, "the removal names the item");
+});
+
 test("a repeating routine is stored as a rule and drawn on every day it falls", async () => {
   const createsBefore = sentCommands().filter((sent) => sent.command === "create").length;
   const title = dom.window.document.getElementById("new-title") as HTMLInputElement;
@@ -391,16 +527,13 @@ test("a repeating routine is stored as a rule and drawn on every day it falls", 
   title.value = "Swimming";
   repeat.value = "weekly";
 
-  // The option names the weekday the day view is on, so the household can see
-  // where the repeat lands before committing to it.
   const weeklyOption = dom.window.document.querySelector<HTMLOptionElement>(
     "#new-repeat option[value='weekly']",
   );
-  const heading = el("day-heading").textContent ?? "";
   assert.match(
     weeklyOption?.textContent ?? "",
     /^Every (Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)$/,
-    `the weekly option should name a day; heading was: ${heading}`,
+    "the weekly option should name a day",
   );
 
   el<HTMLFormElement>("add-form").dispatchEvent(
@@ -414,21 +547,23 @@ test("a repeating routine is stored as a rule and drawn on every day it falls", 
 
   const sent = sentCommands().find((command) => command.command === "add_series");
   assert.ok(sent !== undefined);
-  const series = sent.series as { uid: string; recurrence: { freq: string; byDay?: string[] } };
+  const series = sent.series as { recurrence: { freq: string; byDay?: string[] } };
   assert.equal(series.recurrence.freq, "weekly");
   assert.equal(series.recurrence.byDay?.length, 1);
   // A template carries no outcome: that belongs to a day.
-  assert.equal((sent as { item?: unknown }).item, undefined);
+  assert.equal(sent.item, undefined);
 
   // The rule reached the API as a rule, not as a pile of days.
-  const createsAfter = sentCommands().filter((sent) => sent.command === "create").length;
-  assert.equal(createsAfter, createsBefore, "a repeat must not be sent as single items");
-
-  // And the sentence under the form says what was made.
+  assert.equal(
+    sentCommands().filter((command) => command.command === "create").length,
+    createsBefore,
+    "a repeat must not be sent as single items",
+  );
   assert.match(el("form-status").textContent ?? "", /Repeats every/);
 });
 
 test("the default is still a single occurrence", async () => {
+  const createsBefore = sentCommands().filter((sent) => sent.command === "create").length;
   const title = dom.window.document.getElementById("new-title") as HTMLInputElement;
   const repeat = dom.window.document.getElementById("new-repeat") as HTMLSelectElement;
   title.value = "Dentist";
@@ -437,10 +572,10 @@ test("the default is still a single occurrence", async () => {
     new dom.window.Event("submit", { bubbles: true, cancelable: true }),
   );
   await until(
-    () => sentCommands().some((sent) => sent.command === "create"),
+    () => sentCommands().filter((sent) => sent.command === "create").length > createsBefore,
     "the one-off to reach the server",
   );
-  const sent = sentCommands().find((command) => command.command === "create");
+  const sent = sentCommands().filter((command) => command.command === "create").at(-1);
   assert.ok(sent !== undefined);
   assert.equal(sent.series, undefined);
 });

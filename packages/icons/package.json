@@ -5,6 +5,9 @@
   "type": "module",
   "license": "MIT",
   "description": "The AutiPlanner routine icon set, generated from Phosphor Icons.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
     "generate": "node ./tools/make-phosphor-icons.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",

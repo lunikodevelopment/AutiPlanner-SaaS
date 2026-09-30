@@ -1,3 +1,4 @@
+import { findRoutineIcon, routineIconSvg } from "@autiplanner/icons";
 import {
   DAY_PART_HEADING,
   DAY_PART_LABEL,
@@ -99,6 +100,11 @@ export function primaryAction(status: RoutineStatus): ItemAction | null {
 
 export interface RowHandlers {
   readonly onAction: (item: RoutineItem, action: ItemAction) => void;
+  /** Asked for a row the household wants gone; the app confirms it. */
+  readonly onRemove: (item: RoutineItem) => void;
+  /** Whether this row is currently asking whether to remove it. */
+  readonly confirmsRemove: (item: RoutineItem) => boolean;
+  readonly onRemoveAnswer: (item: RoutineItem, remove: boolean) => void;
 }
 
 /**
@@ -126,7 +132,17 @@ export function renderRow(
   const main = document_.createElement("span");
   const title = document_.createElement("span");
   title.className = "title";
-  title.textContent = item.title;
+  const icon = findRoutineIcon(item.icon);
+  if (icon !== undefined) {
+    // Decoration: the routine's own words are what should be read out.
+    const picture = document_.createElement("span");
+    picture.className = "icon";
+    picture.title = icon.title;
+    picture.setAttribute("aria-hidden", "true");
+    picture.innerHTML = routineIconSvg(icon.name, 22);
+    title.append(picture);
+  }
+  title.append(document_.createTextNode(item.title));
   main.append(title);
 
   const meta = document_.createElement("span");
@@ -149,6 +165,31 @@ export function renderRow(
 
   const actions = document_.createElement("span");
   actions.className = "actions";
+
+  if (handlers.confirmsRemove(item)) {
+    // Removing is the one thing here that cannot be undone by tapping again, so
+    // it asks rather than acting on the first tap.
+    const prompt = document_.createElement("span");
+    prompt.className = "confirm";
+    prompt.setAttribute("role", "status");
+    const question = document_.createElement("span");
+    question.className = "confirm-question";
+    question.textContent = "Remove?";
+    const yes = document_.createElement("button");
+    yes.type = "button";
+    yes.textContent = "Yes";
+    yes.setAttribute("aria-label", `Yes, remove ${item.title}`);
+    yes.addEventListener("click", () => handlers.onRemoveAnswer(item, true));
+    const no = document_.createElement("button");
+    no.type = "button";
+    no.textContent = "No";
+    no.setAttribute("aria-label", `Keep ${item.title}`);
+    no.addEventListener("click", () => handlers.onRemoveAnswer(item, false));
+    prompt.append(question, yes, no);
+    actions.append(prompt);
+    row.append(actions);
+    return row;
+  }
 
   const primary = primaryAction(item.status);
   if (primary !== null) {
@@ -176,6 +217,15 @@ export function renderRow(
   });
   menuWrap.append(menu);
   actions.append(menuWrap);
+
+  const remove = document_.createElement("button");
+  remove.type = "button";
+  remove.className = "remove";
+  remove.textContent = "\u00d7";
+  remove.setAttribute("aria-label", `Remove ${item.title}`);
+  remove.addEventListener("click", () => handlers.onRemove(item));
+  actions.append(remove);
+
   row.append(actions);
 
   return row;

@@ -12,7 +12,8 @@
     "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
-    "@autiplanner/core": "workspace:*"
+    "@autiplanner/core": "workspace:*",
+    "@autiplanner/icons": "workspace:*"
   },
   "devDependencies": {
     "@types/jsdom": "^30.0.0",

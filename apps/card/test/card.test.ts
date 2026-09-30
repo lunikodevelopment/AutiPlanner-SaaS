@@ -13,6 +13,7 @@ import { JSDOM } from "jsdom";
 // globals are installed just below.
 import type { AutiPlannerCard, HomeAssistantLike } from "../src/index.js";
 import { addDays, weekdayCodeOf, weekdayLabel } from "@autiplanner/core";
+import { ROUTINE_ICONS } from "@autiplanner/icons";
 
 interface ServiceCall {
   readonly domain: string;
@@ -282,6 +283,8 @@ test("every action button has an accessible name that includes the item", () => 
     "Mark Eat breakfast completed",
     "Mark Eat breakfast missed",
     "Mark Eat breakfast skipped",
+    // Removing is offered on every row, and asks before it acts.
+    "Remove Eat breakfast",
   ]);
 });
 
@@ -545,4 +548,166 @@ test("helpers", () => {
   hass.states["sensor.routine_today"] = { state: "1", attributes: { items: [] } };
   hass.states[AGENDA] = agendaState([]);
   assert.equal(findAgendaEntity(hass), AGENDA);
+});
+test("the picker offers exactly the routine icon set, and nothing else", async () => {
+  const hass = new FakeHass();
+  hass.states[AGENDA] = agendaState([]);
+  const card = mount(hass);
+  click(card, '[data-act="toggle-add"]');
+
+  const choices = [...(card.shadowRoot?.querySelectorAll('[data-act="pick-icon"]') ?? [])];
+  const names = choices.map((choice) => choice.getAttribute("data-icon"));
+  // One for "no icon", then the set itself in order. Only these.
+  assert.equal(names[0], "");
+  assert.deepEqual(names.slice(1), ROUTINE_ICONS.map((icon) => icon.name));
+  assert.equal(names.length, ROUTINE_ICONS.length + 1);
+
+  // Each choice is named by what it means, and the state is reported rather
+  // than carried by the highlight alone.
+  const labelled = choices.filter((choice) => choice.getAttribute("data-icon") !== "");
+  for (const choice of labelled) {
+    assert.ok((choice.getAttribute("aria-label") ?? "").length > 0);
+    assert.equal(choice.getAttribute("role"), "radio");
+    assert.ok(choice.querySelector("svg") !== null, "each choice should draw its icon");
+  }
+  assert.equal(choices[0]?.getAttribute("aria-label"), "No icon");
+});
+
+test("choosing an icon sends it with the item", async () => {
+  const hass = new FakeHass();
+  hass.states[AGENDA] = agendaState([]);
+  const card = mount(hass);
+  click(card, '[data-act="toggle-add"]');
+  (card.shadowRoot?.querySelector("#ap-title") as HTMLInputElement).value = "Take medication";
+
+  click(card, '[data-act="pick-icon"][data-icon="pill"]');
+  await settle();
+
+  // The chosen one is reported as checked, and the hidden field carries it.
+  const chosen = card.shadowRoot?.querySelector('[data-icon="pill"]');
+  assert.equal(chosen?.getAttribute("aria-checked"), "true");
+  assert.equal(
+    (card.shadowRoot?.querySelector('input[name="icon"]') as HTMLInputElement).value,
+    "pill",
+  );
+
+  const form = card.shadowRoot?.querySelector<HTMLFormElement>("form[data-form]");
+  form?.dispatchEvent(new (dom.window.Event)("submit", { bubbles: true, cancelable: true }));
+  await settle();
+
+  const call = hass.calls.find((candidate) => candidate.service === "create");
+  assert.equal(call?.data["icon"], "pill");
+});
+
+test("an icon reaches a repeating routine too", async () => {
+  const hass = new FakeHass();
+  hass.states[AGENDA] = agendaState([]);
+  const card = mount(hass);
+  click(card, '[data-act="toggle-add"]');
+  (card.shadowRoot?.querySelector("#ap-title") as HTMLInputElement).value = "Swimming";
+  (card.shadowRoot?.querySelector("#ap-repeat") as HTMLSelectElement).value = "weekly";
+  click(card, '[data-act="pick-icon"][data-icon="person-simple-walk"]');
+  await settle();
+
+  const form = card.shadowRoot?.querySelector<HTMLFormElement>("form[data-form]");
+  form?.dispatchEvent(new (dom.window.Event)("submit", { bubbles: true, cancelable: true }));
+  await settle();
+
+  const call = hass.calls.find((candidate) => candidate.service === "add_series");
+  assert.equal(call?.data["icon"], "person-simple-walk");
+});
+
+test("no icon chosen sends no icon field at all", async () => {
+  const hass = new FakeHass();
+  hass.states[AGENDA] = agendaState([]);
+  const card = mount(hass);
+  click(card, '[data-act="toggle-add"]');
+  (card.shadowRoot?.querySelector("#ap-title") as HTMLInputElement).value = "Dentist";
+  const form = card.shadowRoot?.querySelector<HTMLFormElement>("form[data-form]");
+  form?.dispatchEvent(new (dom.window.Event)("submit", { bubbles: true, cancelable: true }));
+  await settle();
+
+  const call = hass.calls.find((candidate) => candidate.service === "create");
+  assert.equal("icon" in (call?.data ?? {}), false, "absent, not an empty string");
+});
+
+test("an item draws the icon it was given", async () => {
+  const hass = new FakeHass();
+  hass.states[AGENDA] = agendaState([item({ icon: "pill" })]);
+  const card = mount(hass);
+
+  const icon = card.shadowRoot?.querySelector(".item .icon svg");
+  assert.ok(icon !== null && icon !== undefined, "the row should draw its icon");
+  assert.match(icon.outerHTML, /<path d="M/);
+  // Decoration: the routine's own words are what is read out.
+  assert.equal(icon.getAttribute("aria-hidden"), "true");
+  // Titled by what the icon means, so hovering explains the picture: the pill
+  // icon is offered as "Take medication".
+  assert.equal(
+    card.shadowRoot?.querySelector(".item .icon")?.getAttribute("title"),
+    "Take medication",
+  );
+});
+
+test("an unknown or absent icon draws nothing rather than an empty box", async () => {
+  const hass = new FakeHass();
+  hass.states[AGENDA] = agendaState([
+    item({ uid: "a@example", icon: "from-a-newer-release" }),
+    item({ uid: "b@example", title: "No icon" }),
+  ]);
+  const card = mount(hass);
+  assert.equal(card.shadowRoot?.querySelector(".item .icon"), null);
+});
+
+test("an item can be removed, and it asks first", async () => {
+  const hass = new FakeHass();
+  hass.states[AGENDA] = agendaState([item()]);
+  const card = mount(hass);
+
+  click(card, '[data-act="remove-item"]');
+  await settle();
+  // One stray tap on a shared dashboard must not remove a routine item.
+  assert.equal(
+    hass.calls.some((call) => call.service === "delete"),
+    false,
+    "one tap must not remove anything",
+  );
+  assert.match(text(card), /Remove\?/);
+
+  click(card, '[data-act="remove-item-no"]');
+  await settle();
+  assert.equal(card.shadowRoot?.querySelector('[data-act="remove-item-yes"]'), null);
+  assert.ok(card.shadowRoot?.querySelector('[data-act="complete"]') !== null);
+
+  click(card, '[data-act="remove-item"]');
+  await settle();
+  click(card, '[data-act="remove-item-yes"]');
+  await settle();
+
+  const call = hass.calls.find((candidate) => candidate.service === "delete");
+  assert.equal(call?.data["uid"], "breakfast@example");
+});
+
+test("removing one day of a repeat removes that day, not the routine", async () => {
+  const hass = new FakeHass();
+  const today = localToday("UTC");
+  hass.states[AGENDA] = agendaState([
+    item({ uid: `swimming@example:${today}`, routineId: "swimming@example", title: "Swimming" }),
+  ]);
+  const card = mount(hass);
+
+  click(card, '[data-act="remove-item"]');
+  await settle();
+  click(card, '[data-act="remove-item-yes"]');
+  await settle();
+
+  const call = hass.calls.find((candidate) => candidate.service === "delete");
+  // The occurrence uid, which the server turns into an excluded date. The ↻
+  // control is the one that removes the whole routine.
+  assert.equal(call?.data["uid"], `swimming@example:${today}`);
+  assert.equal(
+    hass.calls.some((c) => c.data["uid"] === "swimming@example"),
+    false,
+    "removing a day must not delete the series",
+  );
 });

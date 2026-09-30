@@ -301,3 +301,33 @@ describe("a repeating routine made offline", () => {
     assert.equal(result.items.length, 3);
   });
 });
+
+describe("removing an item while offline", () => {
+  test("takes it out of the list straight away", () => {
+    const before = [item(), item({ uid: "other@autiplanner.local", title: "Other" })];
+    const removed = applyLocally(
+      before,
+      command({ command: "delete" }, ["completedAt"]),
+    );
+    assert.deepEqual(
+      removed.items.map((entry) => entry.uid),
+      ["other@autiplanner.local"],
+    );
+  });
+
+  test("a day of a repeat is removed by its own uid, not the routine", () => {
+    const occurrence = item({
+      uid: "swim@autiplanner.local:2026-08-12",
+      routineId: "swim@autiplanner.local",
+    });
+    const other = item({ uid: "swim@autiplanner.local:2026-08-19" });
+    const removed = applyLocally(
+      [occurrence, other],
+      command({ command: "delete", uid: "swim@autiplanner.local:2026-08-12" }, ["completedAt"]),
+    );
+    assert.deepEqual(
+      removed.items.map((entry) => entry.uid),
+      ["swim@autiplanner.local:2026-08-19"],
+    );
+  });
+});
