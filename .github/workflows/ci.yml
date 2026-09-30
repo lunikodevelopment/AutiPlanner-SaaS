@@ -182,15 +182,18 @@ jobs:
             type=semver,pattern={{version}}
             type=sha,format=short
 
-      # Each architecture is pushed under its own tag. The manifest job joins
-      # them, so no digest plumbing is needed between the jobs.
+      # Each architecture is pushed under its own staging tag, unique to this run
+      # and not just this commit: pushing main and then tagging the same commit
+      # starts two runs with the same sha, and shared staging tags let one run
+      # overwrite a source manifest the other is still assembling. The manifest
+      # job names them the same way, so no digest plumbing is needed.
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           platforms: linux/${{ matrix.arch }}
-          tags: ghcr.io/lunikodevelopment/autiplanner-saas:build-${{ github.sha }}-${{ matrix.arch }}
+          tags: ghcr.io/lunikodevelopment/autiplanner-saas:build-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}
           # Stamped into the io.hass.version label so the image identifies itself
           # as the same version as the tag Supervisor pulls.
           build-args: |
@@ -203,7 +206,7 @@ jobs:
       - name: The image starts on its own architecture
         run: |
           set -euo pipefail
-          image="ghcr.io/lunikodevelopment/autiplanner-saas:build-${{ github.sha }}-${{ matrix.arch }}"
+          image="ghcr.io/lunikodevelopment/autiplanner-saas:build-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}"
           docker pull "$image"
           docker run -d --name autiplanner -p 8082:8080 -v "$PWD/data-${{ matrix.arch }}":/data "$image"
           healthy=no
@@ -269,9 +272,32 @@ jobs:
           for tag in ${{ steps.meta.outputs.tags }}; do
             tags="$tags -t $tag"
           done
+          # An empty tag list would make imagetools create an untagged manifest
+          # and look like it worked.
+          if [ -z "$tags" ]; then
+            echo "ERROR: metadata-action resolved no tags to publish"
+            exit 1
+          fi
           echo "Joining the per-architecture builds into:$tags"
           # shellcheck disable=SC2086
-          docker buildx imagetools create $tags "ghcr.io/lunikodevelopment/autiplanner-saas:build-${{ github.sha }}-amd64" "ghcr.io/lunikodevelopment/autiplanner-saas:build-${{ github.sha }}-arm64"
+          docker buildx imagetools create $tags "ghcr.io/lunikodevelopment/autiplanner-saas:build-${{ github.run_id }}-${{ github.run_attempt }}-amd64" "ghcr.io/lunikodevelopment/autiplanner-saas:build-${{ github.run_id }}-${{ github.run_attempt }}-arm64"
+
+      # Publish runs on every push to main, so the staging tags would pile up in
+      # the registry forever. Best effort: a registry that refuses the delete must
+      # not fail a release that is already published.
+      - name: Remove the staging tags
+        if: always()
+        run: |
+          for arch in amd64 arm64; do
+            ref="ghcr.io/lunikodevelopment/autiplanner-saas:build-${{ github.run_id }}-${{ github.run_attempt }}-$arch"
+            digest=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$ref" 2>/dev/null || true)
+            if [ -n "$digest" ]; then
+              curl -fsS -X DELETE \
+                -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+                "https://ghcr.io/v2/lunikodevelopment/autiplanner-saas/manifests/$digest" \
+                && echo "removed $ref" || echo "could not remove $ref, leaving it"
+            fi
+          done
 
       - name: The manifest carries both architectures
         run: |
