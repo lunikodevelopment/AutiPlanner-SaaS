@@ -357,12 +357,18 @@ jobs:
         run: |
           for arch in amd64 arm64; do
             ref="ghcr.io/lunikodevelopment/autiplanner-saas:${STAGING_PREFIX}-${arch}"
-            digest=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$ref" 2>/dev/null || true)
-            if [ -n "$digest" ]; then
-              curl -fsS -X DELETE \
-                -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-                "https://ghcr.io/v2/lunikodevelopment/autiplanner-saas/manifests/$digest" \
-                && echo "removed $ref" || echo "could not remove $ref, leaving it"
+            # Parsed from the report, not asked for as a template field:
+            # `--format '{{.Manifest.Digest}}'` is not a field buildx knows, so
+            # it ignores the template and prints the whole report, which put the
+            # entire listing into the delete URL and quietly removed nothing.
+            digest=$(docker buildx imagetools inspect "$ref" 2>/dev/null | awk '/^Digest:/ {print $2; exit}')
+            if [ -z "$digest" ]; then
+              echo "could not read a digest for $ref, leaving it in place"
+              continue
             fi
+            curl -fsS -X DELETE \
+              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              "https://ghcr.io/v2/lunikodevelopment/autiplanner-saas/manifests/$digest" \
+              && echo "removed $ref" || echo "could not remove $ref, leaving it"
           done
 
