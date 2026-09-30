@@ -12,6 +12,7 @@ import { JSDOM } from "jsdom";
 // Type-only: importing the card for its types must not boot it, since the DOM
 // globals are installed just below.
 import type { AutiPlannerCard, HomeAssistantLike } from "../src/index.js";
+import { addDays, weekdayCodeOf, weekdayLabel } from "@autiplanner/core";
 
 interface ServiceCall {
   readonly domain: string;
@@ -64,8 +65,7 @@ for (const name of [
 }
 
 // Booting the card: importing it defines the custom element.
-const { actionsFor, addDays, findAgendaEntity, localToday, weekdayCode, weekdayName } =
-  await import("../src/index.js");
+const { actionsFor, findAgendaEntity, localToday } = await import("../src/index.js");
 
 const AGENDA = "sensor.routine_agenda";
 
@@ -517,8 +517,8 @@ test("every weekday maps to its own code, Monday first", () => {
   // reasoned about from the outside, and getting it wrong silently moves every
   // weekly routine to the wrong day.
   const week = ["2026-09-28", "2026-09-29", "2026-09-30", "2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04"];
-  assert.deepEqual(week.map((date) => weekdayCode(date)), ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]);
-  assert.deepEqual(week.map((date) => weekdayName(date)), [
+  assert.deepEqual(week.map((date) => weekdayCodeOf(date)), ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]);
+  assert.deepEqual(week.map((date) => weekdayLabel(date)), [
     "Monday",
     "Tuesday",
     "Wednesday",

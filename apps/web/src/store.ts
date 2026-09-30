@@ -1,4 +1,4 @@
-import type { RoutineItem } from "@autiplanner/core";
+import type { RoutineItem, RoutineTemplate } from "@autiplanner/core";
 import type { CommandName } from "./api.js";
 
 /** A command the user made that has not been confirmed by the server yet. */
@@ -10,6 +10,8 @@ export interface PendingCommand {
   readonly completedAt?: string;
   readonly expectedRevision?: number;
   readonly item?: RoutineItem;
+  /** A repeating template, for `add_series`. */
+  readonly series?: RoutineTemplate;
   readonly patch?: Record<string, unknown>;
   readonly queuedAt: string;
 }

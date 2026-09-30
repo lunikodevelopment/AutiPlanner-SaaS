@@ -325,11 +325,24 @@ function assertWindow(rangeStart: string, rangeEnd: string): void {
 }
 
 function weekdayCode(date: string): WeekdayCode {
-  const utc = utcDate(date);
-  const index = utc.getUTCDay();
-  const code = WEEKDAY_CODES.find((candidate) => WEEKDAY_FROM_CODE[candidate] === index);
+  const code = weekdayCodeOf(date);
   if (!code) throw new RecurrenceError("invalid weekday");
   return code;
+}
+
+/**
+ * The iCalendar weekday code for a day, or undefined when it is not a day.
+ *
+ * Both clients need this to anchor a weekly repeat, and both got it wrong once:
+ * `WEEKDAY_CODES` starts at Monday while the clock's weekday starts at Sunday.
+ * One implementation here is the only way that stays in step with
+ * `datesMatching`, which reads the codes back.
+ */
+export function weekdayCodeOf(date: string): WeekdayCode | undefined {
+  if (!isCalendarDate(date)) return undefined;
+  return WEEKDAY_CODES.find(
+    (candidate) => WEEKDAY_FROM_CODE[candidate] === utcDate(date).getUTCDay(),
+  );
 }
 
 function startOfWeek(date: string): string {

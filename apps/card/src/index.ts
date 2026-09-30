@@ -15,9 +15,11 @@ import {
   DAY_PARTS,
   STATUS_ACCESSIBLE_LABEL,
   STATUS_SYMBOL,
-  WEEKDAY_CODES,
+  addDays,
   formatClock,
   isCalendarDate,
+  weekdayCodeOf,
+  weekdayLabel,
   type DayPart,
   type RoutineItem,
   type RoutineStatus,
@@ -169,7 +171,11 @@ export class AutiPlannerCard extends HTMLElement {
     this.#syncOptimistic(items);
 
     const today = localToday(hass?.config.time_zone);
-    const days = Array.from({ length: this.#config.days }, (_, offset) => addDays(today, offset));
+    const days: string[] = [];
+    for (let offset = 0; offset < this.#config.days; offset += 1) {
+      const date = addDays(today, offset);
+      if (date !== undefined) days.push(date);
+    }
     const effective = items.map((item) => {
       const override = this.#optimistic.get(item.uid);
       return override === undefined ? item : { ...item, status: override };
@@ -285,7 +291,7 @@ export class AutiPlannerCard extends HTMLElement {
         // the form is showing. `#onChange` keeps that word current as the date
         // is edited, without redrawing the form under the household's cursor.
         const label =
-          choice === "weekly" ? `Every ${weekdayName(isCalendarDate(date) ? date : today)}` : REPEAT_LABEL[choice];
+          choice === "weekly" ? `Every ${weekdayLabel(date) ?? ""}` : REPEAT_LABEL[choice];
         return `<option value="${choice}"${choice === draft.repeat ? " selected" : ""}${choice === "weekly" ? ' id="ap-repeat-weekly"' : ""}>${escape(label)}</option>`;
       })
       .join("");
@@ -293,7 +299,7 @@ export class AutiPlannerCard extends HTMLElement {
     // under the form says which day that is rather than asking again.
     const note =
       draft.repeat === "weekly"
-        ? `Repeats every ${weekdayName(isCalendarDate(date) ? date : today)}`
+        ? `Repeats every ${weekdayLabel(date) ?? ""}`
         : draft.repeat === "daily"
           ? "Repeats every day"
           : "";
@@ -390,7 +396,7 @@ export class AutiPlannerCard extends HTMLElement {
     const chosen = String(data.get("date") ?? "").trim();
     const date = chosen === "" ? localToday(this.#hass?.config.time_zone) : chosen;
     const repeat = String(data.get("repeat") ?? "none");
-    const weekday = isCalendarDate(date) ? weekdayName(date) : "";
+    const weekday = isCalendarDate(date) ? weekdayLabel(date) ?? "" : "";
 
     const weekly = form.querySelector("#ap-repeat-weekly");
     if (weekly !== null && weekday !== "") {
@@ -489,7 +495,7 @@ export class AutiPlannerCard extends HTMLElement {
             repeat === "weekly"
               ? // The weekday comes from the date the household chose, which is
                 // what "the same day every week" means on the form.
-                { freq: "weekly", byDay: [weekdayCode(date)] }
+                { freq: "weekly", byDay: [weekdayCodeOf(date) ?? "MO"] }
               : { freq: "daily" },
         };
         if (start !== undefined) payload["start"] = start;
@@ -638,12 +644,6 @@ function findStatus(row: Element | null, optimistic: ReadonlyMap<string, Routine
   return status !== undefined && STATUSES.includes(status) ? (status as RoutineStatus) : "pending";
 }
 
-export function addDays(date: string, delta: number): string {
-  const [year, month, day] = date.split("-").map(Number) as [number, number, number];
-  const utc = new Date(Date.UTC(year, month - 1, day));
-  utc.setUTCDate(utc.getUTCDate() + delta);
-  return utc.toISOString().slice(0, 10);
-}
 
 export function localToday(timeZone: string | undefined): string {
   const now = new Date();
@@ -682,29 +682,6 @@ export function dayName(date: string, index: number): string {
   }).format(new Date(Date.UTC(year, month - 1, day)));
 }
 
-/**
- * The iCalendar weekday code for a day.
- *
- * A weekly repeat is anchored on the weekday of the date the household picked,
- * so "every week on the same day" needs no second question on the form.
- *
- * `WEEKDAY_CODES` starts at Monday; `getUTCDay` starts at Sunday. The shift is
- * what makes a Wednesday come out as WE rather than TH.
- */
-export function weekdayCode(date: string): string {
-  const [year, month, day] = date.split("-").map(Number) as [number, number, number];
-  const sundayFirst = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
-  return WEEKDAY_CODES[(sundayFirst + 6) % 7] ?? "MO";
-}
-
-/** The same weekday in words, for the sentence under the form. */
-export function weekdayName(date: string): string {
-  const [year, month, day] = date.split("-").map(Number) as [number, number, number];
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone: "UTC",
-    weekday: "long",
-  }).format(new Date(Date.UTC(year, month - 1, day)));
-}
 
 function escape(value: string): string {
   const entities: Record<string, string> = {

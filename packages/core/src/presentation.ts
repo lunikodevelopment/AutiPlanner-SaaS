@@ -1,4 +1,5 @@
 import type { DayPart, RoutineItem, RoutineStatus } from "./model.js";
+import { weekdayName } from "./time.js";
 
 /** Canonical glyphs. Status is never communicated by color alone. */
 export const STATUS_SYMBOL: Readonly<Record<RoutineStatus, string>> = {
@@ -57,4 +58,16 @@ export function formatClock(timestamp: string): string | undefined {
   if (zone === "Z") return `${clock} UTC`;
   if (zone) return `${clock} ${zone}`;
   return clock;
+}
+
+/**
+ * The weekday in words, for a sentence rather than a heading.
+ *
+ * `weekdayName` returns the domain's enum form ("WEDNESDAY"); this is what a
+ * person reads ("Wednesday").
+ */
+export function weekdayLabel(date: string): string | undefined {
+  const name = weekdayName(date);
+  if (name === undefined) return undefined;
+  return name[0] + name.slice(1).toLowerCase();
 }

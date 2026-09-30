@@ -76,7 +76,15 @@
           <label for="new-time">Time (optional)</label>
           <input id="new-time" name="time" type="time" />
 
+          <label for="new-repeat">Repeats</label>
+          <select id="new-repeat" name="repeat">
+            <option value="none">Just once</option>
+            <option value="daily">Every day</option>
+            <option value="weekly">Every week</option>
+          </select>
+
           <button type="submit">Add</button>
+          <p id="form-status" class="muted" role="status"></p>
         </form>
       </details>
 

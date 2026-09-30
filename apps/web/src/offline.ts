@@ -1,6 +1,7 @@
 import {
   complete,
   create as createRoutineItem,
+  expandSeries,
   markMissed,
   reset,
   skip,
@@ -98,10 +99,15 @@ function mergeItem(state: LocalState, response: CommandResponse): LocalState {
  * The same core functions the server uses do the work, so an optimistic update
  * cannot invent a state the server would never store - a missed item stays
  * missed here too.
+ *
+ * `window` is the range the list covers. A repeating routine is expanded over
+ * exactly that range, with the same function the server uses, so the days shown
+ * offline are the days the server would send back.
  */
 export function applyLocally(
   items: readonly RoutineItem[],
   command: PendingCommand,
+  window?: { readonly from: string; readonly to: string },
 ): { items: readonly RoutineItem[]; item: RoutineItem | null } {
   try {
     switch (command.command) {
@@ -131,6 +137,17 @@ export function applyLocally(
         // too, so local and server behaviour cannot diverge.
         const outcome = createRoutineItem(items, command.item);
         return { items: outcome.items, item: outcome.result.item };
+      }
+      case "add_series": {
+        if (command.series === undefined) break;
+        // Without a window there is nothing to expand into, and inventing one
+        // would show days the server might not. The command still reaches the
+        // server; only the preview waits for the answer.
+        if (window === undefined) break;
+        const occurrences = expandSeries(command.series, window.from, window.to, items);
+        const byUid = new Map(items.map((item) => [item.uid, item]));
+        for (const occurrence of occurrences) byUid.set(occurrence.uid, occurrence);
+        return { items: [...byUid.values()], item: null };
       }
       default:
         break;

@@ -1,4 +1,4 @@
-import type { RoutineItem } from "@autiplanner/core";
+import type { RoutineItem, RoutineTemplate } from "@autiplanner/core";
 
 /** An error returned by the API, with the status so callers can branch on it. */
 export class ApiError extends Error {
@@ -19,7 +19,8 @@ export type CommandName =
   | "reset"
   | "create"
   | "update"
-  | "delete";
+  | "delete"
+  | "add_series";
 
 export interface CommandRequest {
   readonly command: CommandName;
@@ -29,6 +30,8 @@ export interface CommandRequest {
   /** Stable key so a retried offline command is applied only once. */
   readonly clientCommandId?: string;
   readonly item?: RoutineItem;
+  /** A repeating template, for `add_series`. */
+  readonly series?: RoutineTemplate;
   readonly patch?: Record<string, unknown>;
 }
 

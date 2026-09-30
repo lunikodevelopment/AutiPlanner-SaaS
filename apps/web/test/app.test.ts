@@ -14,6 +14,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { JSDOM } from "jsdom";
+import { expandSeries, type RoutineItem, type RoutineTemplate } from "@autiplanner/core";
 
 interface FakeItem {
   uid: string;
@@ -32,6 +33,8 @@ interface Call {
 
 class FakeApi {
   items: FakeItem[] = [];
+  /** Stored rules, expanded for reads exactly as the server does. */
+  series: RoutineTemplate[] = [];
   revision = 0;
   authenticated = false;
   /** When true, every request fails the way fetch does with no network. */
@@ -67,10 +70,14 @@ class FakeApi {
       const from = url.searchParams.get("from") ?? "";
       const days = Number(url.searchParams.get("days") ?? "14");
       const to = addDays(from, days);
-      return json(200, {
-        items: this.items.filter((item) => item.date >= from && item.date < to),
-        revision: this.revision,
-      });
+      const direct = this.items.filter((item) => item.date >= from && item.date < to);
+      const seen = new Set(direct.map((item) => item.uid));
+      const expanded = this.series.flatMap((template) =>
+        expandSeries(template, from, to, this.items as unknown as RoutineItem[]).filter(
+          (item) => !seen.has(item.uid),
+        ),
+      );
+      return json(200, { items: [...direct, ...expanded], revision: this.revision });
     }
     if (url.pathname === "/api/command") {
       return this.command(body ?? {});
@@ -100,6 +107,13 @@ class FakeApi {
     }
 
     const name = String(body.command);
+    if (name === "add_series") {
+      const series = body.series as RoutineTemplate;
+      this.series.push(series);
+      this.revision += 1;
+      if (typeof key === "string") this.applied.add(key);
+      return json(200, { item: null, changed: true, revision: this.revision });
+    }
     if (name === "create") {
       const item = body.item as FakeItem;
       this.items.push({ ...item });
@@ -360,4 +374,73 @@ test("nothing was written to the console as an error", async () => {
   // A console error here would mean the app threw while handling the offline
   // cycle, which the visible assertions above would not necessarily catch.
   assert.equal(installedErrors.length, 0, `console errors: ${installedErrors.join(" | ")}`);
+});
+
+
+/** The command bodies the app actually posted, in order. */
+function sentCommands(): Record<string, unknown>[] {
+  return api.calls
+    .filter((call) => call.path === "/api/command")
+    .map((call) => call.body ?? {});
+}
+
+test("a repeating routine is stored as a rule and drawn on every day it falls", async () => {
+  const createsBefore = sentCommands().filter((sent) => sent.command === "create").length;
+  const title = dom.window.document.getElementById("new-title") as HTMLInputElement;
+  const repeat = dom.window.document.getElementById("new-repeat") as HTMLSelectElement;
+  title.value = "Swimming";
+  repeat.value = "weekly";
+
+  // The option names the weekday the day view is on, so the household can see
+  // where the repeat lands before committing to it.
+  const weeklyOption = dom.window.document.querySelector<HTMLOptionElement>(
+    "#new-repeat option[value='weekly']",
+  );
+  const heading = el("day-heading").textContent ?? "";
+  assert.match(
+    weeklyOption?.textContent ?? "",
+    /^Every (Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)$/,
+    `the weekly option should name a day; heading was: ${heading}`,
+  );
+
+  el<HTMLFormElement>("add-form").dispatchEvent(
+    new dom.window.Event("submit", { bubbles: true, cancelable: true }),
+  );
+  await until(
+    () => sentCommands().some((sent) => sent.command === "add_series"),
+    "the repeat to reach the server",
+  );
+  await settle();
+
+  const sent = sentCommands().find((command) => command.command === "add_series");
+  assert.ok(sent !== undefined);
+  const series = sent.series as { uid: string; recurrence: { freq: string; byDay?: string[] } };
+  assert.equal(series.recurrence.freq, "weekly");
+  assert.equal(series.recurrence.byDay?.length, 1);
+  // A template carries no outcome: that belongs to a day.
+  assert.equal((sent as { item?: unknown }).item, undefined);
+
+  // The rule reached the API as a rule, not as a pile of days.
+  const createsAfter = sentCommands().filter((sent) => sent.command === "create").length;
+  assert.equal(createsAfter, createsBefore, "a repeat must not be sent as single items");
+
+  // And the sentence under the form says what was made.
+  assert.match(el("form-status").textContent ?? "", /Repeats every/);
+});
+
+test("the default is still a single occurrence", async () => {
+  const title = dom.window.document.getElementById("new-title") as HTMLInputElement;
+  const repeat = dom.window.document.getElementById("new-repeat") as HTMLSelectElement;
+  title.value = "Dentist";
+  repeat.value = "none";
+  el<HTMLFormElement>("add-form").dispatchEvent(
+    new dom.window.Event("submit", { bubbles: true, cancelable: true }),
+  );
+  await until(
+    () => sentCommands().some((sent) => sent.command === "create"),
+    "the one-off to reach the server",
+  );
+  const sent = sentCommands().find((command) => command.command === "create");
+  assert.ok(sent !== undefined);
+  assert.equal(sent.series, undefined);
 });

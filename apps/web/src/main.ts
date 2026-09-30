@@ -1,4 +1,9 @@
-import type { RoutineItem } from "@autiplanner/core";
+import {
+  weekdayCodeOf,
+  weekdayLabel,
+  type RoutineItem,
+  type RoutineTemplate,
+} from "@autiplanner/core";
 import { ApiError, isRetryable, HttpApi } from "./api.js";
 import { applyLocally, flushPending, type FlushOutcome } from "./offline.js";
 import { newId, openLocalStore, type LocalStore, type PendingCommand } from "./store.js";
@@ -37,6 +42,7 @@ const elements = {
   refresh: must<HTMLButtonElement>("refresh"),
   signOut: must<HTMLButtonElement>("sign-out"),
   addForm: must<HTMLFormElement>("add-form"),
+  formStatus: must<HTMLElement>("form-status"),
   feedUrl: must<HTMLInputElement>("feed-url"),
   feedCopy: must<HTMLButtonElement>("feed-copy"),
   feedRotate: must<HTMLButtonElement>("feed-rotate"),
@@ -66,6 +72,15 @@ function must<T extends HTMLElement>(id: string): T {
 
 function render(): void {
   elements.dayHeading.textContent = formatDayHeading(state.selectedDate, todayIso());
+
+  // The week the repeat would land on is the weekday of the day being looked
+  // at, so the option says which day rather than leaving the household to work
+  // it out. "Every week" is also what the stored rule does.
+  const weekday = weekdayLabel(state.selectedDate);
+  const weekly = document.querySelector<HTMLOptionElement>("#new-repeat option[value='weekly']");
+  if (weekly !== null && weekday !== undefined) {
+    weekly.textContent = `Every ${weekday}`;
+  }
 
   const sections = sectionsFor(state.items, state.selectedDate);
   elements.agenda.replaceChildren(
@@ -132,7 +147,9 @@ function hideConflict(): void {
 async function refreshQueuedUids(): Promise<void> {
   const pending = await store.listPending();
   state.queuedUids = new Set(
-    pending.map((command) => command.uid ?? command.item?.uid ?? "").filter((uid) => uid !== ""),
+    pending
+      .map((command) => command.uid ?? command.item?.uid ?? command.series?.uid ?? "")
+      .filter((uid) => uid !== ""),
   );
 }
 
@@ -146,6 +163,7 @@ async function flush(): Promise<FlushOutcome> {
         ? {}
         : { expectedRevision: command.expectedRevision }),
       ...(command.item === undefined ? {} : { item: command.item }),
+      ...(command.series === undefined ? {} : { series: command.series }),
       ...(command.patch === undefined ? {} : { patch: command.patch }),
       clientCommandId: command.id,
     });
@@ -175,7 +193,7 @@ async function sync(): Promise<void> {
       // interface to the pre-change state, and an offline edit would appear to
       // undo itself the moment the network returned.
       const outcome = await flush();
-      const agenda = await api.agenda(state.selectedDate, 14);
+      const agenda = await api.agenda(state.selectedDate, WINDOW_DAYS);
       state.items = agenda.items;
       state.revision = agenda.revision;
       await store.putState({
@@ -240,40 +258,88 @@ async function handleAction(item: RoutineItem, action: ItemAction): Promise<void
   }
 }
 
+/** How many days the app loads and previews a repeating routine over. */
+const WINDOW_DAYS = 14;
+
+/** The last day of the loaded window, exclusive. */
+function windowEnd(from: string): string {
+  return addDays(from, WINDOW_DAYS) ?? from;
+}
+
 async function handleAdd(form: HTMLFormElement): Promise<void> {
   const data = new FormData(form);
   const title = String(data.get("title") ?? "").trim();
   const dayPart = String(data.get("dayPart") ?? "morning");
   const time = String(data.get("time") ?? "");
+  const repeat = String(data.get("repeat") ?? "none");
   if (title === "") return;
+  elements.formStatus.textContent = "";
 
+  // The item goes on the day being looked at, which is the day the window was
+  // loaded from. A weekly repeat anchors on that date's weekday, so "the same
+  // day every week" needs no second question.
+  const date = state.selectedDate;
   const uid = `${newId()}@pwa`;
-  const item: RoutineItem = {
-    uid,
-    title,
-    date: state.selectedDate,
-    dayPart: dayPart as RoutineItem["dayPart"],
-    status: "pending",
-    ...(time === "" ? {} : { start: `${state.selectedDate}T${time}:00` }),
-  };
+  const start = time === "" ? undefined : `${date}T${time}:00`;
+  const on = weekdayLabel(date) ?? "";
 
-  const command: PendingCommand = {
-    id: newId(),
-    command: "create",
-    item,
-    queuedAt: nowSeconds(),
-    expectedRevision: state.revision,
-  };
-  const local = applyLocally(state.items, command);
+  if (repeat === "none") {
+    const item: RoutineItem = {
+      uid,
+      title,
+      date,
+      dayPart: dayPart as RoutineItem["dayPart"],
+      status: "pending",
+      ...(start === undefined ? {} : { start }),
+    };
+    const command: PendingCommand = {
+      id: newId(),
+      command: "create",
+      item,
+      queuedAt: nowSeconds(),
+      expectedRevision: state.revision,
+    };
+    await queue(command);
+  } else {
+    // A repeating routine is stored as a rule. The server expands it for the
+    // window it is asked for, so no future calendar is written down here.
+    const series: RoutineTemplate = {
+      uid,
+      title,
+      date,
+      dayPart: dayPart as RoutineItem["dayPart"],
+      recurrence:
+        repeat === "weekly" ? { freq: "weekly", byDay: [weekdayCodeOf(date) ?? "MO"] } : { freq: "daily" },
+      ...(start === undefined ? {} : { start }),
+    };
+    const command: PendingCommand = {
+      id: newId(),
+      command: "add_series",
+      series,
+      queuedAt: nowSeconds(),
+      expectedRevision: state.revision,
+    };
+    await queue(command);
+    elements.formStatus.textContent =
+      repeat === "weekly" ? `Repeats every ${on}.` : "Repeats every day.";
+  }
+
+  form.reset();
+  render();
+  if (state.online) await sync();
+}
+
+/** Applies a command locally, stores it for the server, and redraws. */
+async function queue(command: PendingCommand): Promise<void> {
+  const local = applyLocally(state.items, command, {
+    from: state.selectedDate,
+    to: windowEnd(state.selectedDate),
+  });
   state.items = local.items;
   state.revision += 1;
   await store.putPending(command);
   await store.putState({ items: state.items, revision: state.revision, syncedAt: null });
   await refreshQueuedUids();
-  form.reset();
-  render();
-
-  if (state.online) await sync();
 }
 
 // --------------------------------------------------------- subscription feed
@@ -374,11 +440,15 @@ async function attemptAuth(create: boolean): Promise<void> {
 
 function wireEvents(): void {
   elements.prevDay.addEventListener("click", () => {
-    state.selectedDate = addDays(state.selectedDate, -1);
+    const previous = addDays(state.selectedDate, -1);
+    if (previous === undefined) return;
+    state.selectedDate = previous;
     void sync();
   });
   elements.nextDay.addEventListener("click", () => {
-    state.selectedDate = addDays(state.selectedDate, 1);
+    const next = addDays(state.selectedDate, 1);
+    if (next === undefined) return;
+    state.selectedDate = next;
     void sync();
   });
   elements.refresh.addEventListener("click", () => void sync());
@@ -438,7 +508,7 @@ async function start(): Promise<void> {
   }
 
   try {
-    await api.agenda(state.selectedDate, 14);
+    await api.agenda(state.selectedDate, WINDOW_DAYS);
     showPlanner();
     await sync();
     await loadFeed();

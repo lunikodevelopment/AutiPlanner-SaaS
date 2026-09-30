@@ -77,6 +77,27 @@ export function weekdayName(date: string): Weekday | undefined {
 }
 
 /**
+ * The day a number of days away, for building a window.
+ *
+ * Non-throwing like the rest of this module: an unusable date has no answer
+ * rather than an exception, so callers that already hold a valid date are not
+ * forced to wrap a plain addition in a try.
+ */
+export function addDays(date: string, days: number): string | undefined {
+  if (!isCalendarDate(date)) return undefined;
+  const match = DATE_PATTERN.exec(date);
+  if (!match) return undefined;
+  const utc = new Date(
+    Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])),
+  );
+  utc.setUTCDate(utc.getUTCDate() + days);
+  const year = utc.getUTCFullYear().toString().padStart(4, "0");
+  const month = (utc.getUTCMonth() + 1).toString().padStart(2, "0");
+  const day = utc.getUTCDate().toString().padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+/**
  * Converts a numeric offset to UTC. This uses the offset already present on
  * the timestamp; it does not look up or guess a timezone name.
  */

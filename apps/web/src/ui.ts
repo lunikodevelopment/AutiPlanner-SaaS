@@ -10,6 +10,10 @@ import {
   type RoutineStatus,
 } from "@autiplanner/core";
 
+// Date arithmetic lives in the domain package: the card needs it too, and a
+// second copy is how the two would drift.
+export { addDays } from "@autiplanner/core";
+
 export interface RenderInput {
   readonly items: readonly RoutineItem[];
   readonly selectedDate: string;
@@ -69,12 +73,6 @@ export function formatDayHeading(date: string, today: string): string {
   });
 }
 
-export function addDays(date: string, delta: number): string {
-  const [year, month, day] = date.split("-").map(Number) as [number, number, number];
-  const utc = new Date(Date.UTC(year, month - 1, day));
-  utc.setUTCDate(utc.getUTCDate() + delta);
-  return utc.toISOString().slice(0, 10);
-}
 
 export function todayIso(): string {
   const now = new Date();

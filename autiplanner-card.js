@@ -9,6 +9,15 @@ var __privateMethod = (obj, member, method) => (__accessCheck(obj, member, "acce
 
 // ../../packages/core/src/time.ts
 var DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+var WEEKDAYS = [
+  "SUNDAY",
+  "MONDAY",
+  "TUESDAY",
+  "WEDNESDAY",
+  "THURSDAY",
+  "FRIDAY",
+  "SATURDAY"
+];
 function isCalendarDate(value) {
   const match = DATE_PATTERN.exec(value);
   if (!match) return false;
@@ -21,12 +30,53 @@ function isCalendarDate(value) {
   const utc = new Date(Date.UTC(year, month - 1, day));
   return utc.getUTCFullYear() === year && utc.getUTCMonth() === month - 1 && utc.getUTCDate() === day;
 }
+function weekdayName(date) {
+  if (!isCalendarDate(date)) return void 0;
+  const match = DATE_PATTERN.exec(date);
+  if (!match) return void 0;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const weekday = WEEKDAYS[new Date(Date.UTC(year, month - 1, day)).getUTCDay()];
+  return weekday;
+}
+function addDays(date, days) {
+  if (!isCalendarDate(date)) return void 0;
+  const match = DATE_PATTERN.exec(date);
+  if (!match) return void 0;
+  const utc = new Date(
+    Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+  );
+  utc.setUTCDate(utc.getUTCDate() + days);
+  const year = utc.getUTCFullYear().toString().padStart(4, "0");
+  const month = (utc.getUTCMonth() + 1).toString().padStart(2, "0");
+  const day = utc.getUTCDate().toString().padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 
 // ../../packages/core/src/model.ts
 var DAY_PARTS = ["morning", "afternoon", "evening", "night"];
 
 // ../../packages/core/src/recurrence.ts
 var WEEKDAY_CODES = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
+var WEEKDAY_FROM_CODE = {
+  SU: 0,
+  MO: 1,
+  TU: 2,
+  WE: 3,
+  TH: 4,
+  FR: 5,
+  SA: 6
+};
+function weekdayCodeOf(date) {
+  if (!isCalendarDate(date)) return void 0;
+  return WEEKDAY_CODES.find(
+    (candidate) => WEEKDAY_FROM_CODE[candidate] === utcDate(date).getUTCDay()
+  );
+}
+function utcDate(date) {
+  return new Date(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10))));
+}
 
 // ../../packages/core/src/presentation.ts
 var STATUS_SYMBOL = {
@@ -57,6 +107,11 @@ function formatClock(timestamp) {
   if (zone === "Z") return `${clock} UTC`;
   if (zone) return `${clock} ${zone}`;
   return clock;
+}
+function weekdayLabel(date) {
+  const name = weekdayName(date);
+  if (name === void 0) return void 0;
+  return name[0] + name.slice(1).toLowerCase();
 }
 
 // src/index.ts
@@ -158,7 +213,11 @@ render_fn = function() {
   const items = readItems(state);
   __privateMethod(this, _AutiPlannerCard_instances, syncOptimistic_fn).call(this, items);
   const today = localToday(hass?.config.time_zone);
-  const days = Array.from({ length: __privateGet(this, _config).days }, (_, offset) => addDays(today, offset));
+  const days = [];
+  for (let offset = 0; offset < __privateGet(this, _config).days; offset += 1) {
+    const date = addDays(today, offset);
+    if (date !== void 0) days.push(date);
+  }
   const effective = items.map((item) => {
     const override = __privateGet(this, _optimistic).get(item.uid);
     return override === void 0 ? item : { ...item, status: override };
@@ -241,10 +300,10 @@ renderEditor_fn = function(today) {
     (dayPart) => `<option value="${dayPart}"${dayPart === draft.dayPart ? " selected" : ""}>${escape(DAY_PART_HEADING[dayPart])}</option>`
   ).join("");
   const repeats = Object.keys(REPEAT_LABEL).map((choice) => {
-    const label = choice === "weekly" ? `Every ${weekdayName2(isCalendarDate(date) ? date : today)}` : REPEAT_LABEL[choice];
+    const label = choice === "weekly" ? `Every ${weekdayLabel(date) ?? ""}` : REPEAT_LABEL[choice];
     return `<option value="${choice}"${choice === draft.repeat ? " selected" : ""}${choice === "weekly" ? ' id="ap-repeat-weekly"' : ""}>${escape(label)}</option>`;
   }).join("");
-  const note = draft.repeat === "weekly" ? `Repeats every ${weekdayName2(isCalendarDate(date) ? date : today)}` : draft.repeat === "daily" ? "Repeats every day" : "";
+  const note = draft.repeat === "weekly" ? `Repeats every ${weekdayLabel(date) ?? ""}` : draft.repeat === "daily" ? "Repeats every day" : "";
   return `<form class="add" data-form="add">
       <label for="ap-title">New routine item</label>
       <input id="ap-title" name="title" value="${escape(draft.title)}" required maxlength="120" placeholder="Take medication" />
@@ -333,7 +392,7 @@ onChange_fn = function(event) {
   const chosen = String(data.get("date") ?? "").trim();
   const date = chosen === "" ? localToday(__privateGet(this, _hass)?.config.time_zone) : chosen;
   const repeat = String(data.get("repeat") ?? "none");
-  const weekday = isCalendarDate(date) ? weekdayName2(date) : "";
+  const weekday = isCalendarDate(date) ? weekdayLabel(date) ?? "" : "";
   const weekly = form.querySelector("#ap-repeat-weekly");
   if (weekly !== null && weekday !== "") {
     weekly.textContent = `Every ${weekday}`;
@@ -408,7 +467,7 @@ create_fn = async function(form) {
         recurrence: repeat === "weekly" ? (
           // The weekday comes from the date the household chose, which is
           // what "the same day every week" means on the form.
-          { freq: "weekly", byDay: [weekdayCode(date)] }
+          { freq: "weekly", byDay: [weekdayCodeOf(date) ?? "MO"] }
         ) : { freq: "daily" }
       };
       if (start !== void 0) payload["start"] = start;
@@ -523,12 +582,6 @@ function findStatus(row, optimistic) {
   const status = element?.dataset["status"];
   return status !== void 0 && STATUSES.includes(status) ? status : "pending";
 }
-function addDays(date, delta) {
-  const [year, month, day] = date.split("-").map(Number);
-  const utc = new Date(Date.UTC(year, month - 1, day));
-  utc.setUTCDate(utc.getUTCDate() + delta);
-  return utc.toISOString().slice(0, 10);
-}
 function localToday(timeZone) {
   const now = /* @__PURE__ */ new Date();
   try {
@@ -561,18 +614,6 @@ function dayName(date, index) {
     weekday: "short",
     day: "numeric",
     month: "short"
-  }).format(new Date(Date.UTC(year, month - 1, day)));
-}
-function weekdayCode(date) {
-  const [year, month, day] = date.split("-").map(Number);
-  const sundayFirst = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
-  return WEEKDAY_CODES[(sundayFirst + 6) % 7] ?? "MO";
-}
-function weekdayName2(date) {
-  const [year, month, day] = date.split("-").map(Number);
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone: "UTC",
-    weekday: "long"
   }).format(new Date(Date.UTC(year, month - 1, day)));
 }
 function escape(value) {
@@ -661,7 +702,6 @@ var index_default = AutiPlannerCard;
 export {
   AutiPlannerCard,
   actionsFor,
-  addDays,
   dayName,
   index_default as default,
   findAgendaEntity,
@@ -669,7 +709,5 @@ export {
   localToday,
   readIssues,
   readItems,
-  renderSummary,
-  weekdayCode,
-  weekdayName2 as weekdayName
+  renderSummary
 };

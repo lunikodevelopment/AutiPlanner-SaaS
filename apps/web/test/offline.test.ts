@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test, { describe } from "node:test";
-import type { RoutineItem } from "@autiplanner/core";
+import { weekdayLabel, type RoutineItem } from "@autiplanner/core";
 import { ApiError, type CommandResponse } from "../src/api.js";
 import { applyLocally, flushPending } from "../src/offline.js";
 import { MemoryStore, type PendingCommand } from "../src/store.js";
@@ -230,5 +230,74 @@ describe("memory store", () => {
     await store.clear();
     assert.equal(await store.getState(), null);
     assert.deepEqual(await store.listPending(), []);
+  });
+});
+
+describe("a repeating routine made offline", () => {
+  const series = {
+    uid: "swimming@autiplanner.local",
+    title: "Swimming",
+    date: "2026-08-12",
+    dayPart: "afternoon" as const,
+    recurrence: { freq: "weekly" as const, byDay: ["WE" as const] },
+  };
+
+  const queued = command(
+    { command: "add_series", series },
+    ["uid", "completedAt"],
+  );
+
+  test("expands over the window the app is showing, not the whole future", () => {
+    const result = applyLocally([], queued, { from: "2026-08-12", to: "2026-08-26" });
+    assert.deepEqual(
+      result.items.map((entry) => entry.date),
+      ["2026-08-12", "2026-08-19"],
+    );
+    // Each day is its own occurrence, and says which routine it came from.
+    for (const entry of result.items) {
+      assert.equal(entry.routineId, "swimming@autiplanner.local");
+      assert.equal(entry.status, "pending");
+      assert.equal(entry.dayPart, "afternoon");
+    }
+  });
+
+  test("the same core expansion the server uses, so the days agree", () => {
+    // A weekly rule anchored on a Wednesday must not show up on Tuesdays.
+    const result = applyLocally([], queued, { from: "2026-08-12", to: "2026-09-09" });
+    for (const entry of result.items) {
+      assert.equal(weekdayLabel(entry.date), "Wednesday");
+    }
+  });
+
+  test("days already recorded keep their outcome", () => {
+    const recorded = item({
+      uid: "swimming@autiplanner.local:2026-08-19",
+      date: "2026-08-19",
+      dayPart: "afternoon",
+      routineId: "swimming@autiplanner.local",
+      status: "completed",
+    });
+    const result = applyLocally([recorded], queued, { from: "2026-08-12", to: "2026-08-26" });
+    const thatDay = result.items.find((entry) => entry.uid === recorded.uid);
+    assert.equal(thatDay?.status, "completed");
+    // And the unrecorded week is still pending.
+    const otherDay = result.items.find((entry) => entry.date === "2026-08-12");
+    assert.equal(otherDay?.status, "pending");
+  });
+
+  test("with no window nothing is invented", () => {
+    // Offline with no loaded range: better to show nothing than days the
+    // server might not have.
+    const result = applyLocally([], queued);
+    assert.deepEqual(result.items, []);
+  });
+
+  test("a day rule repeats every day in the window", () => {
+    const daily = command(
+      { command: "add_series", series: { ...series, recurrence: { freq: "daily" as const } } },
+      ["uid", "completedAt"],
+    );
+    const result = applyLocally([], daily, { from: "2026-08-12", to: "2026-08-15" });
+    assert.equal(result.items.length, 3);
   });
 });
