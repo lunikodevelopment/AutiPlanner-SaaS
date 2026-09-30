@@ -51,10 +51,21 @@ jobs:
       # Domain packages, API integration tests, PWA offline rules, and a jsdom
       # run of the real application and of the dashboard card.
       - run: pnpm test
-      # The card is served to Home Assistant from its own repository, so what
-      # users download is compared against a fresh build here. A test on the
-      # TypeScript source cannot show that the published artifact is current,
-      # and a stale bundle would pass every other job.
+
+  # The card and the container image are separate deliverables: a card that has
+  # not been published must not stop the server being released, and the server
+  # being released must not be taken as proof the card was published. Its own
+  # job, so it reports honestly either way and blocks only itself.
+  card:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
       - name: The published card matches a fresh build
         env:
           PUBLISHED_CARD: https://raw.githubusercontent.com/lunikodevelopment/AutiPlanner-Card/main/autiplanner-card.js
