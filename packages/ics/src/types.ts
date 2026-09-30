@@ -65,6 +65,8 @@ export interface SerializeOptions {
   /** DTSTAMP applied to written VTODO components. Defaults to the current time. */
   dtstamp?: Date;
   prodId?: string;
+  /** Extra VCALENDAR-level properties, such as REFRESH-INTERVAL. */
+  calendarProperties?: readonly string[];
 }
 
 export class IcsSerializeError extends Error {

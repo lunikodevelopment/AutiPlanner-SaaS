@@ -54,6 +54,21 @@ apps with the outcome as a glyph in the title. If a calendar shows nothing,
 remove the subscription and add it again: Apple Calendar in particular caches a
 subscription that was added before the feed worked.
 
+## Refresh rate
+
+A subscription refreshes on the calendar app's schedule, not the server's:
+
+- **Apple Calendar (macOS)**: **Auto-refresh** allows every **5 minutes** at the
+  fastest; there is no one-minute option.
+- **Apple Calendar (iPhone/iPad)**: no per-subscription interval; it follows
+  **Settings → Calendar → Accounts → Fetch New Data**.
+- **Google Calendar**: every **12–24 hours**, not configurable.
+
+Inside Home Assistant, the companion integration polls the API every 60 seconds
+by default (minimum 15), which is the reliable way to see a change within a
+minute. The server revalidates every request with an `ETag` and answers `304`
+when nothing changed, so fast polling is cheap.
+
 ## Ports
 
 The web interface and API listen on port `8080` inside the app, published on the

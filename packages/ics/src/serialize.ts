@@ -202,6 +202,12 @@ export function serializeEventCalendar(
     textProperty("PRODID", prodId),
     "CALSCALE:GREGORIAN",
   ];
+  for (const property of options.calendarProperties ?? []) {
+    if (/[\r\n]/.test(property.replaceAll("\r\n ", "").replaceAll("\r\n\t", ""))) {
+      throw new IcsSerializeError(["calendar property contains a bare newline"]);
+    }
+    lines.push(property);
+  }
   for (const item of items) {
     lines.push(...serializeEvent(item, dtstamp));
   }

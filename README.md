@@ -107,6 +107,12 @@ the feed emits `VEVENT`s with the outcome in `X-AUTIPLANNER-OUTCOME` and in the
 summary glyph — `✓` completed, `○` pending, `✕` missed, `—` skipped. A missed
 routine is never shown as completed.
 
+Refresh rate is the calendar app's: Apple Calendar (macOS) offers every **5
+minutes** at the fastest, Google Calendar refreshes every **12–24 hours** and
+cannot be changed. The server revalidates every request with an `ETag` (`304`
+when unchanged) and advertises `REFRESH-INTERVAL`, so fast polling is cheap. For
+a one-minute update inside Home Assistant, use the integration's poll interval.
+
 
 ## How it is put together
 

@@ -93,6 +93,30 @@ so the feed emits `VEVENT`s. The four-state outcome stays in
 `X-AUTIPLANNER-OUTCOME` and in the summary glyph (`✓` completed, `○` pending,
 `✕` missed, `—` skipped).
 
+### Keeping it in sync
+
+The refresh rate is the calendar app's, not the server's:
+
+- **Apple Calendar (macOS)**: the subscription's **Auto-refresh** offers every
+  **5 minutes** at the fastest; there is no one-minute option. Right-click the
+  calendar → **Get Info** → **Auto-refresh**.
+- **Apple Calendar (iPhone/iPad)**: no per-subscription interval; it follows
+  **Settings → Calendar → Accounts → Fetch New Data** (15 minutes at the
+  fastest, and battery-gated).
+- **Google Calendar**: subscribed feeds refresh every **12–24 hours**, and this
+  cannot be changed.
+
+The server does its part: every request is revalidated with an `ETag`, and a
+poll with no changes is a `304 Not Modified`, so even a client asking every
+minute is cheap. The feed also advertises `REFRESH-INTERVAL;VALUE=DURATION:PT1M`,
+which a few clients honour.
+
+For updates inside Home Assistant within a minute, use the integration rather
+than a subscription. It polls the API directly on **Poll interval** (default 60
+seconds, minimum 15), so entities and automations see a change inside a minute.
+Set it under **Settings → Devices & services → AutiPlanner (hosted) →
+Configure**.
+
 ## Actions
 
 The integration registers these actions, named as in the on-device integration.

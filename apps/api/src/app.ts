@@ -41,6 +41,15 @@ const FEED_ROUTE = /^\/api\/feed\/([^/]+)\/([^/]+)\.ics$/;
 const FEED_PAST_DAYS = 30;
 const FEED_FUTURE_DAYS = 330;
 
+/**
+ * Advertised refresh interval. RFC 7986's ``REFRESH-INTERVAL`` and Outlook's
+ * ``X-PUBLISHED-TTL`` are hints; Apple Calendar ignores them and uses its own
+ * per-subscription setting, and Google Calendar ignores them entirely. They cost
+ * nothing and a few clients honour them.
+ */
+const FEED_REFRESH_PROPERTY = "REFRESH-INTERVAL;VALUE=DURATION:PT1M";
+const FEED_PUBLISHED_TTL_PROPERTY = "X-PUBLISHED-TTL:PT1M";
+
 /** Routes that require a session, matched before authentication. */
 function isProtectedRoute(method: string, pathname: string): boolean {
   if (pathname === "/api/auth/logout") return method === "POST";
@@ -108,7 +117,7 @@ export function createApp(dependencies: AppDependencies): http.RequestListener {
     }
 
     if (pathname === "/api/health" && method === "GET") {
-      sendJson(response, 200, { status: "ok", version: "0.1.1" });
+      sendJson(response, 200, { status: "ok", version: "0.1.2" });
       return;
     }
 
@@ -118,7 +127,12 @@ export function createApp(dependencies: AppDependencies): http.RequestListener {
     // endpoint does not confirm which calendars exist.
     const feedRoute = FEED_ROUTE.exec(pathname);
     if (feedRoute !== null && method === "GET") {
-      await serveFeed(response, feedRoute[1] as string, feedRoute[2] as string);
+      await serveFeed(
+        request,
+        response,
+        feedRoute[1] as string,
+        feedRoute[2] as string,
+      );
       return;
     }
 
@@ -283,6 +297,7 @@ export function createApp(dependencies: AppDependencies): http.RequestListener {
    * confirms that a guessed calendar id exists.
    */
   async function serveFeed(
+    request: http.IncomingMessage,
     response: http.ServerResponse,
     calendarId: string,
     token: string,
@@ -295,22 +310,40 @@ export function createApp(dependencies: AppDependencies): http.RequestListener {
     if (expected === null || !constantTimeStringEqual(expected, token)) {
       throw notFound();
     }
+
     // The store is the canonical VTODO profile; calendar applications only draw
     // VEVENTs, so the feed is a projection over the same items with series
     // expanded for a bounded window.
     const today = new Date().toISOString().slice(0, 10);
-    const items = await store.feedItems(
-      plusDays(today, -FEED_PAST_DAYS),
-      plusDays(today, FEED_FUTURE_DAYS + 1),
-    );
-    const body = Buffer.from(serializeEventCalendar(items), "utf8");
+    const from = plusDays(today, -FEED_PAST_DAYS);
+    const to = plusDays(today, FEED_FUTURE_DAYS + 1);
+
+    // The body changes only when the calendar does, or when the window rolls
+    // over at midnight. An ETag over both lets a client that polls every minute
+    // revalidate for a few bytes instead of downloading the whole feed.
+    const etag = `"${store.revision}-${from}-${to}"`;
+    const headers: Record<string, string | number> = {
+      // Revalidate on every poll: a client asking once a minute must be able to
+      // see a change within that minute, so no stale window is allowed.
+      "cache-control": "private, no-cache",
+      etag,
+    };
+    if (matchesEtag(request.headers["if-none-match"], etag)) {
+      response.writeHead(304, headers);
+      response.end();
+      return;
+    }
+
+    const items = await store.feedItems(from, to);
+    const calendar = serializeEventCalendar(items, {
+      calendarProperties: [FEED_REFRESH_PROPERTY, FEED_PUBLISHED_TTL_PROPERTY],
+    });
+    const body = Buffer.from(calendar, "utf8");
     response.writeHead(200, {
+      ...headers,
       "content-type": "text/calendar; charset=utf-8",
       "content-length": body.length,
       "content-disposition": `inline; filename="${slug(found.calendar.name)}.ics"`,
-      // Calendar apps refresh on their own schedule; a short cache keeps a busy
-      // client from hitting the server on every page it renders.
-      "cache-control": "private, max-age=300",
     });
     response.end(body);
   }
@@ -435,6 +468,18 @@ export function itemPayload(item: RoutineItem): Record<string, unknown> {
 /** The path a household adds to Google Calendar or Apple Calendar. */
 export function feedPath(calendarId: string, token: string): string {
   return `/api/feed/${calendarId}/${token}.ics`;
+}
+
+/** True when an ``If-None-Match`` header covers the current entity tag. */
+function matchesEtag(header: string | string[] | undefined, etag: string): boolean {
+  if (header === undefined) return false;
+  const values = Array.isArray(header) ? header : [header];
+  return values.some((value) =>
+    value
+      .split(",")
+      .map((candidate) => candidate.trim())
+      .some((candidate) => candidate === "*" || candidate === etag || candidate === `W/${etag}`),
+  );
 }
 
 /** A safe attachment filename derived from a calendar name. */

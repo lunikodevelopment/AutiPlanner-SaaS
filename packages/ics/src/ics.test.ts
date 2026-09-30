@@ -479,3 +479,12 @@ test("the event projection never emits a completedAt for a missed item", () => {
   assert.match(written, /X-AUTIPLANNER-OUTCOME:MISSED/);
   assert.doesNotMatch(written, /X-AUTIPLANNER-OUTCOME:COMPLETED/);
 });
+
+test("the event projection can advertise a refresh interval", () => {
+  const written = serializeEventCalendar([routine()], {
+    dtstamp: stamp,
+    calendarProperties: ["REFRESH-INTERVAL;VALUE=DURATION:PT1M", "X-PUBLISHED-TTL:PT1M"],
+  });
+  assert.match(written, /REFRESH-INTERVAL;VALUE=DURATION:PT1M/);
+  assert.match(written, /X-PUBLISHED-TTL:PT1M/);
+});

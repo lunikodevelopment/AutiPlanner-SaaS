@@ -606,6 +606,44 @@ describe("subscription feed", () => {
     assert.equal((await feed(newPath)).status, 200);
   });
 
+  test("the feed revalidates cheaply and advertises a refresh interval", async () => {
+    const { token, calendarId } = await setupCalendar("feed-cache@example.com");
+    const me = await api("GET", "/api/me", { token });
+    const path = me.body.calendars.find((cal: any) => cal.id === calendarId).feedPath as string;
+
+    const first = await fetch(`${server.base}${path}`);
+    assert.equal(first.status, 200);
+    assert.equal(first.headers.get("cache-control"), "private, no-cache");
+    const etag = first.headers.get("etag");
+    assert.ok(etag, "the feed should carry an ETag");
+    assert.match(await first.text(), /REFRESH-INTERVAL;VALUE=DURATION:PT1M/);
+
+    // A client polling every minute gets a cheap 304 while nothing has changed.
+    const conditional = await fetch(`${server.base}${path}`, {
+      headers: { "if-none-match": etag as string },
+    });
+    assert.equal(conditional.status, 304);
+    assert.equal(await conditional.text(), "");
+
+    // A change to the calendar changes the ETag, so the next poll sees it.
+    await api("POST", "/api/command", {
+      token,
+      body: {
+        command: "create",
+        item: {
+          uid: "second@autiplanner.local",
+          title: "Second",
+          date: isoToday(),
+          dayPart: "night",
+          status: "pending",
+        },
+      },
+    });
+    const after = await fetch(`${server.base}${path}`);
+    assert.notEqual(after.headers.get("etag"), etag);
+    assert.match(await after.text(), /second@autiplanner\.local/);
+  });
+
   test("the subscription feed needs no session, minting one does", async () => {
     const { token, calendarId } = await setupCalendar("feed-auth@example.com");
     const me = await api("GET", "/api/me", { token });
