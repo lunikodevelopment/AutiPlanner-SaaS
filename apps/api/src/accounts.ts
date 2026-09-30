@@ -183,6 +183,24 @@ export class AccountStore {
     return first.id;
   }
 
+  /**
+   * Finds a calendar across every account.
+   *
+   * The subscription feed is fetched by calendar software that cannot send an
+   * ``Authorization`` header, so the calendar is located by its id and the
+   * request is authorised by the per-calendar feed token instead.
+   */
+  async findCalendar(
+    calendarId: string,
+  ): Promise<{ accountId: string; calendar: CalendarRecord } | null> {
+    await this.ensureLoaded();
+    for (const account of this.accounts) {
+      const calendar = account.calendars.find((candidate) => candidate.id === calendarId);
+      if (calendar !== undefined) return { accountId: account.id, calendar };
+    }
+    return null;
+  }
+
   private findOrThrow(accountId: string): AccountRecord {
     const account = this.accounts.find((candidate) => candidate.id === accountId);
     if (account === undefined) throw notFound("No such account");

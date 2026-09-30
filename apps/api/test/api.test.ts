@@ -504,3 +504,97 @@ describe("persistence and isolation", () => {
     assert.match(accounts, /"algorithm": "scrypt"/);
   });
 });
+
+describe("subscription feed", () => {
+  async function feed(
+    route: string,
+  ): Promise<{ status: number; text: string; contentType: string | null }> {
+    const response = await fetch(`${server.base}${route}`);
+    return {
+      status: response.status,
+      text: await response.text(),
+      contentType: response.headers.get("content-type"),
+    };
+  }
+
+  async function setupCalendar(email: string): Promise<{ token: string; calendarId: string }> {
+    const registered = await api("POST", "/api/auth/register", {
+      body: { email, password: "a perfectly good password" },
+    });
+    const token = registered.body.token as string;
+    const calendarId = registered.body.calendarId as string;
+    await api("POST", "/api/command", {
+      token,
+      body: {
+        command: "create",
+        item: {
+          uid: "feed-item@autiplanner.local",
+          title: "Feed item",
+          date: "2026-10-05",
+          dayPart: "morning",
+          status: "pending",
+        },
+      },
+    });
+    return { token, calendarId };
+  }
+
+  test("a calendar can be subscribed to by URL without a token header", async () => {
+    const { token, calendarId } = await setupCalendar("feed@example.com");
+    const me = await api("GET", "/api/me", { token });
+    const record = me.body.calendars.find((cal: any) => cal.id === calendarId);
+    assert.ok(record.feedPath.startsWith(`/api/feed/${calendarId}/`), record.feedPath);
+    assert.ok(record.feedPath.endsWith(".ics"), record.feedPath);
+
+    const response = await feed(record.feedPath as string);
+    assert.equal(response.status, 200);
+    assert.match(response.contentType ?? "", /text\/calendar/);
+    assert.match(response.text, /^BEGIN:VCALENDAR/);
+    assert.match(response.text, /feed-item@autiplanner\.local/);
+    // The AutiPlanner extensions must survive the round trip through the feed.
+    assert.match(response.text, /X-AUTIPLANNER-/);
+  });
+
+  test("the feed path is stable across reads", async () => {
+    const { token, calendarId } = await setupCalendar("feed-stable@example.com");
+    const first = await api("GET", `/api/calendars/${calendarId}/feed`, { token });
+    const second = await api("GET", `/api/calendars/${calendarId}/feed`, { token });
+    assert.equal(first.body.feed.path, second.body.feed.path);
+  });
+
+  test("a wrong or missing feed token is a 404", async () => {
+    const { token, calendarId } = await setupCalendar("feed-wrong@example.com");
+    const me = await api("GET", "/api/me", { token });
+    const record = me.body.calendars.find((cal: any) => cal.id === calendarId);
+    const path = record.feedPath as string;
+
+    const wrong = path.replace(/[^/]+\.ics$/, "not-the-token.ics");
+    assert.equal((await feed(wrong)).status, 404);
+    assert.equal((await feed(`/api/feed/${calendarId}/missing.ics`)).status, 404);
+    assert.equal((await feed(`/api/feed/no-such-calendar/anything.ics`)).status, 404);
+  });
+
+  test("rotating the feed invalidates the previous URL", async () => {
+    const { token, calendarId } = await setupCalendar("feed-rotate@example.com");
+    const me = await api("GET", "/api/me", { token });
+    const oldPath = me.body.calendars.find((cal: any) => cal.id === calendarId).feedPath as string;
+    assert.equal((await feed(oldPath)).status, 200);
+
+    const rotated = await api("POST", `/api/calendars/${calendarId}/feed/rotate`, { token });
+    const newPath = rotated.body.feed.path as string;
+    assert.notEqual(newPath, oldPath);
+    assert.equal((await feed(oldPath)).status, 404);
+    assert.equal((await feed(newPath)).status, 200);
+  });
+
+  test("the subscription feed needs no session, minting one does", async () => {
+    const { token, calendarId } = await setupCalendar("feed-auth@example.com");
+    const me = await api("GET", "/api/me", { token });
+    const path = me.body.calendars.find((cal: any) => cal.id === calendarId).feedPath as string;
+    // The feed URL works with no cookie and no bearer token.
+    assert.equal((await feed(path)).status, 200);
+    // Reading or rotating the URL still requires being signed in.
+    assert.equal((await api("GET", `/api/calendars/${calendarId}/feed`)).status, 401);
+    assert.equal((await api("POST", `/api/calendars/${calendarId}/feed/rotate`)).status, 401);
+  });
+});

@@ -1,0 +1,88 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "AutiPlanner (hosted)",
+        "description": "Connect to an AutiPlanner server. The default address is the app's, if you installed it on this Home Assistant.",
+        "menu_options": {
+          "sign_in": "Sign in to an existing account",
+          "register": "Create a new account"
+        }
+      },
+      "sign_in": {
+        "title": "Sign in",
+        "data": {
+          "base_url": "Server address",
+          "email": "Email",
+          "password": "Password"
+        },
+        "data_description": {
+          "base_url": "Where the AutiPlanner API is served, for example http://homeassistant.local:8080.",
+          "email": "The email you signed up with.",
+          "password": "The account password."
+        }
+      },
+      "register": {
+        "title": "Create an account",
+        "data": {
+          "base_url": "Server address",
+          "email": "Email",
+          "password": "Password"
+        },
+        "data_description": {
+          "base_url": "Where the AutiPlanner API is served, for example http://homeassistant.local:8080.",
+          "email": "The email to register.",
+          "password": "Choose a password. It must be long enough for the server."
+        }
+      },
+      "calendar": {
+        "title": "Choose a calendar",
+        "data": {
+          "calendar_id": "Calendar"
+        },
+        "data_description": {
+          "calendar_id": "Which of your AutiPlanner calendars this entry should track."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Sign in again",
+        "description": "The session for {email} is no longer valid. Enter the password to continue.",
+        "data": {
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "That email and password were not accepted.",
+      "cannot_connect": "Could not reach the server. Check the address and that the server is running.",
+      "invalid_url": "The address must start with http:// or https://.",
+      "email_taken": "An account with that email already exists. Sign in instead.",
+      "registration_closed": "This server is not accepting new accounts.",
+      "invalid_email": "Enter a valid email address.",
+      "invalid_password": "That password was rejected. Try a longer one.",
+      "unknown": "Something went wrong. Check the Home Assistant log for details."
+    },
+    "abort": {
+      "already_configured": "This account and calendar are already set up.",
+      "no_calendars": "That account has no calendar to track.",
+      "reauth_successful": "Signed in again."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "AutiPlanner options",
+        "data": {
+          "window_days": "Days either side of today",
+          "scan_interval": "Poll interval (seconds)",
+          "calendar_id": "Calendar"
+        },
+        "data_description": {
+          "window_days": "How many days before and after today the agenda sensors cover. 1 to 45.",
+          "scan_interval": "How often to ask the server for changes, in seconds. 15 to 3600.",
+          "calendar_id": "Switch to another of your calendars."
+        }
+      }
+    }
+  }
+}

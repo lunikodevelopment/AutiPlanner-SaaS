@@ -1,0 +1,29 @@
+name: AutiPlanner (hosted)
+version: "0.1.0"
+slug: autiplanner_saas
+description: >-
+  The hosted AutiPlanner API and offline-first planner, running on your Home
+  Assistant. Point the AutiPlanner integration at it, or open the web app.
+url: https://github.com/lunikodevelopment/AutiPlanner-SaaS
+arch:
+  - aarch64
+  - amd64
+# The image is built by CI for both architectures and published to GHCR. The
+# `version` above must match the image tag that CI pushes for a release.
+image: ghcr.io/lunikodevelopment/autiplanner-saas
+startup: application
+boot: auto
+ports:
+  8080/tcp: 8080
+ports_description:
+  8080/tcp: Web interface and API
+webui: http://[HOST]:[PORT:8080]/
+watchdog: http://[HOST]:[PORT:8080]/api/health
+# The app reads these directly; they are environment variables, not options, so
+# they are the same ones the standalone image documents in .env.example.
+environment:
+  DATA_DIR: /data
+  HOST: 0.0.0.0
+  PORT: "8080"
+  SERVE_WEB: "true"
+  ALLOW_REGISTRATION: "true"

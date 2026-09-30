@@ -18,6 +18,7 @@ import { parseCalendar, serializeCalendar, type IcsIssue } from "@autiplanner/ic
 import fs from "node:fs/promises";
 import path from "node:path";
 import { ApiError, badRequest, conflict, notFound } from "./errors.js";
+import { createToken } from "./security.js";
 import { Mutex, writeFileAtomic } from "./storage.js";
 
 export interface CalendarMeta {
@@ -29,6 +30,12 @@ export interface CalendarMeta {
    * never saw acknowledged; the key stops it being applied twice.
    */
   appliedCommands: string[];
+  /**
+   * Secret for the read-only ``.ics`` subscription feed that Google Calendar and
+   * Apple Calendar can add by URL. Absent until the feed is first requested, so
+   * an existing calendar is not given one behind the household's back.
+   */
+  feedToken?: string;
 }
 
 /** Bounds the idempotency ledger so it cannot grow without limit. */
@@ -92,6 +99,51 @@ export class CalendarStore {
 
   get calendarIssues(): readonly IcsIssue[] {
     return this.issues;
+  }
+
+  /** The subscription token, or null when no feed has been requested yet. */
+  get feedToken(): string | null {
+    return this.meta.feedToken ?? null;
+  }
+
+  /** Returns the feed token, creating it on first use. */
+  async ensureFeedToken(): Promise<string> {
+    await this.ensureLoaded();
+    return this.lock.run(async () => {
+      if (this.meta.feedToken) return this.meta.feedToken;
+      const token = createToken();
+      this.meta.feedToken = token;
+      await this.persistMetaUnlocked();
+      return token;
+    });
+  }
+
+  /** Replaces the feed token. The previous subscription URL stops working. */
+  async rotateFeedToken(): Promise<string> {
+    await this.ensureLoaded();
+    return this.lock.run(async () => {
+      const token = createToken();
+      this.meta.feedToken = token;
+      await this.persistMetaUnlocked();
+      return token;
+    });
+  }
+
+  /**
+   * The calendar as an ``.ics`` document, for the subscription feed.
+   *
+   * Rebuilt from the loaded items rather than read from disk, so a feed read
+   * never races a write and always reflects the revision the server holds.
+   */
+  async readIcs(): Promise<string> {
+    await this.ensureLoaded();
+    return this.lock.run(async () =>
+      serializeCalendar({
+        items: this.items,
+        series: this.series,
+        preserved: this.preserved,
+      }),
+    );
   }
 
   async ensureLoaded(): Promise<void> {
@@ -267,6 +319,10 @@ export class CalendarStore {
       });
     this.meta = meta ?? { revision: 0, updatedAt: new Date().toISOString(), appliedCommands: [] };
     if (!Array.isArray(this.meta.appliedCommands)) this.meta.appliedCommands = [];
+  }
+
+  private async persistMetaUnlocked(): Promise<void> {
+    await writeFileAtomic(this.metaPath, `${JSON.stringify(this.meta, null, 2)}\n`);
   }
 
   private async persistUnlocked(): Promise<void> {

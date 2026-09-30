@@ -18,6 +18,11 @@ node_modules/
 *.pem
 *.key
 
+# Python (the Home Assistant integration and its tests)
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
 # IDE / OS
 .idea/
 .vscode/

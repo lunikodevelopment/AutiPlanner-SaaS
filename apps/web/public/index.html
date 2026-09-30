@@ -79,6 +79,21 @@
           <button type="submit">Add</button>
         </form>
       </details>
+
+      <details class="subscribe">
+        <summary>Subscribe in Google or Apple Calendar</summary>
+        <p class="muted">
+          Add this read-only address as a subscribed calendar. It refreshes on the
+          calendar app's own schedule and never changes your routine.
+        </p>
+        <label for="feed-url">Calendar feed URL</label>
+        <input id="feed-url" type="url" readonly />
+        <div class="subscribe-actions">
+          <button type="button" id="feed-copy">Copy URL</button>
+          <button type="button" id="feed-rotate" class="secondary">New URL</button>
+        </div>
+        <p id="feed-status" class="muted" role="status" aria-live="polite"></p>
+      </details>
     </main>
 
     <script type="module" src="/app.js"></script>

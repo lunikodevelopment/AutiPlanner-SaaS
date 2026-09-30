@@ -270,6 +270,28 @@ button.icon {
   margin-top: 12px;
 }
 
+.subscribe {
+  margin-top: 24px;
+}
+
+.subscribe label {
+  display: block;
+  margin-top: 12px;
+}
+
+.subscribe input[readonly] {
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+}
+
+.subscribe-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 @media (min-width: 640px) {
   main {
     padding: 24px;

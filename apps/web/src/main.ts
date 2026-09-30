@@ -37,6 +37,10 @@ const elements = {
   refresh: must<HTMLButtonElement>("refresh"),
   signOut: must<HTMLButtonElement>("sign-out"),
   addForm: must<HTMLFormElement>("add-form"),
+  feedUrl: must<HTMLInputElement>("feed-url"),
+  feedCopy: must<HTMLButtonElement>("feed-copy"),
+  feedRotate: must<HTMLButtonElement>("feed-rotate"),
+  feedStatus: must<HTMLElement>("feed-status"),
 };
 
 const state = {
@@ -48,6 +52,9 @@ const state = {
   /** The selected outcome persists while the update is in flight. */
   busy: false,
 };
+
+/** The calendar whose subscription URL the subscribe section is showing. */
+let feedCalendarId: string | null = null;
 
 function must<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
@@ -269,6 +276,62 @@ async function handleAdd(form: HTMLFormElement): Promise<void> {
   if (state.online) await sync();
 }
 
+// --------------------------------------------------------- subscription feed
+
+/**
+ * Shows the read-only URL a household can add to Google Calendar or Apple
+ * Calendar. The server mints the token on first request, so the URL is stable
+ * until it is rotated.
+ */
+async function loadFeed(): Promise<void> {
+  try {
+    const me = await api.me();
+    const calendar = me.calendars.find((entry) => entry.feedPath !== undefined);
+    if (calendar?.feedPath === undefined) {
+      elements.feedStatus.textContent = "This server does not offer a calendar feed.";
+      return;
+    }
+    feedCalendarId = calendar.id;
+    elements.feedUrl.value = absolute(calendar.feedPath);
+    elements.feedStatus.textContent = "";
+  } catch {
+    elements.feedStatus.textContent = "Could not load the calendar address.";
+  }
+}
+
+async function copyFeedUrl(): Promise<void> {
+  if (elements.feedUrl.value === "") return;
+  try {
+    await navigator.clipboard.writeText(elements.feedUrl.value);
+    elements.feedStatus.textContent = "Copied. Paste it into your calendar app.";
+  } catch {
+    // Clipboard access can be denied; selecting the field is a usable fallback.
+    elements.feedUrl.select();
+    elements.feedStatus.textContent = "Select the address and copy it.";
+  }
+}
+
+async function rotateFeedUrl(): Promise<void> {
+  if (feedCalendarId === null) return;
+  elements.feedRotate.disabled = true;
+  try {
+    const feed = await api.rotateFeed(feedCalendarId);
+    elements.feedUrl.value = absolute(feed.path);
+    // The previous URL stops working, so say so plainly.
+    elements.feedStatus.textContent =
+      "New address created. Add it again in your calendar app; the old one stopped working.";
+  } catch {
+    elements.feedStatus.textContent = "Could not create a new address.";
+  } finally {
+    elements.feedRotate.disabled = false;
+  }
+}
+
+/** Makes the server-relative feed path absolute for the household to copy. */
+function absolute(path: string): string {
+  return new URL(path, document.baseURI).toString();
+}
+
 // ------------------------------------------------------------------- auth
 
 function showAuth(): void {
@@ -296,6 +359,7 @@ async function attemptAuth(create: boolean): Promise<void> {
     }
     showPlanner();
     await sync();
+    await loadFeed();
   } catch (error) {
     elements.authError.hidden = false;
     elements.authError.textContent =
@@ -339,6 +403,8 @@ function wireEvents(): void {
     event.preventDefault();
     void handleAdd(elements.addForm);
   });
+  elements.feedCopy.addEventListener("click", () => void copyFeedUrl());
+  elements.feedRotate.addEventListener("click", () => void rotateFeedUrl());
 
   globalThis.addEventListener("online", () => {
     state.online = true;
@@ -375,6 +441,7 @@ async function start(): Promise<void> {
     await api.agenda(state.selectedDate, 14);
     showPlanner();
     await sync();
+    await loadFeed();
   } catch (error) {
     if (error instanceof ApiError && error.status === 401) {
       showAuth();

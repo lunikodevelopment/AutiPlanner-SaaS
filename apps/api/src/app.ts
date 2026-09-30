@@ -15,7 +15,7 @@ import {
   sessionCookie,
 } from "./http-util.js";
 import { CalendarRegistry } from "./registry.js";
-import { RateLimiter } from "./security.js";
+import { RateLimiter, constantTimeStringEqual } from "./security.js";
 import { serveStatic } from "./static.js";
 import type { RoutineItem } from "@autiplanner/core";
 
@@ -27,6 +27,10 @@ export interface AppDependencies {
 
 const MAX_WINDOW_DAYS = 90;
 const CALENDAR_ROUTE = /^\/api\/calendars\/([^/]+)$/;
+const CALENDAR_FEED_ROUTE = /^\/api\/calendars\/([^/]+)\/feed$/;
+const CALENDAR_FEED_ROTATE_ROUTE = /^\/api\/calendars\/([^/]+)\/feed\/rotate$/;
+/** The unauthenticated subscription feed. The token is the credential. */
+const FEED_ROUTE = /^\/api\/feed\/([^/]+)\/([^/]+)\.ics$/;
 
 /** Routes that require a session, matched before authentication. */
 function isProtectedRoute(method: string, pathname: string): boolean {
@@ -34,6 +38,8 @@ function isProtectedRoute(method: string, pathname: string): boolean {
   if (pathname === "/api/me") return method === "GET";
   if (pathname === "/api/calendars") return method === "POST";
   if (CALENDAR_ROUTE.test(pathname)) return method === "DELETE";
+  if (CALENDAR_FEED_ROUTE.test(pathname)) return method === "GET";
+  if (CALENDAR_FEED_ROTATE_ROUTE.test(pathname)) return method === "POST";
   if (pathname === "/api/agenda") return method === "GET";
   if (pathname === "/api/sync") return method === "GET";
   if (pathname === "/api/command") return method === "POST";
@@ -97,6 +103,16 @@ export function createApp(dependencies: AppDependencies): http.RequestListener {
       return;
     }
 
+    // The subscription feed is deliberately unauthenticated: Google Calendar and
+    // Apple Calendar fetch a URL and cannot send a bearer token. The per-calendar
+    // token in the path is the credential, and a wrong one is a 404 so the
+    // endpoint does not confirm which calendars exist.
+    const feedRoute = FEED_ROUTE.exec(pathname);
+    if (feedRoute !== null && method === "GET") {
+      await serveFeed(response, feedRoute[1] as string, feedRoute[2] as string);
+      return;
+    }
+
     if (pathname === "/api/auth/register" && method === "POST") {
       authLimiter.check(clientAddress(request));
       if (!config.allowRegistration) {
@@ -149,9 +165,18 @@ export function createApp(dependencies: AppDependencies): http.RequestListener {
     }
 
     if (pathname === "/api/me" && method === "GET") {
+      // Each calendar carries its subscription path, minting the token on first
+      // read so the household can copy the URL straight into their calendar app.
+      const withFeeds = await Promise.all(
+        account.calendars.map(async (record) => {
+          const store = calendars.get(account.id, record.id);
+          const token = await store.ensureFeedToken();
+          return { ...record, feedPath: feedPath(record.id, token) };
+        }),
+      );
       sendJson(response, 200, {
         account: { id: account.id, email: account.email, createdAt: account.createdAt },
-        calendars: account.calendars,
+        calendars: withFeeds,
       });
       return;
     }
@@ -169,6 +194,24 @@ export function createApp(dependencies: AppDependencies): http.RequestListener {
       const calendarId = calendarRoute[1] as string;
       await accounts.removeCalendar(account.id, calendarId);
       sendNoContent(response);
+      return;
+    }
+
+    const calendarFeedRoute = CALENDAR_FEED_ROUTE.exec(pathname);
+    if (calendarFeedRoute !== null && method === "GET") {
+      const calendarId = calendarFeedRoute[1] as string;
+      await accounts.requireCalendar(account.id, calendarId);
+      const token = await calendars.get(account.id, calendarId).ensureFeedToken();
+      sendJson(response, 200, { feed: { path: feedPath(calendarId, token) } });
+      return;
+    }
+
+    const rotateRoute = CALENDAR_FEED_ROTATE_ROUTE.exec(pathname);
+    if (rotateRoute !== null && method === "POST") {
+      const calendarId = rotateRoute[1] as string;
+      await accounts.requireCalendar(account.id, calendarId);
+      const token = await calendars.get(account.id, calendarId).rotateFeedToken();
+      sendJson(response, 200, { feed: { path: feedPath(calendarId, token) } });
       return;
     }
 
@@ -222,6 +265,37 @@ export function createApp(dependencies: AppDependencies): http.RequestListener {
     const calendarId = requested ?? (await accounts.defaultCalendarId(accountId));
     await accounts.requireCalendar(accountId, calendarId);
     return calendars.get(accountId, calendarId);
+  }
+
+  /**
+   * Serves one calendar as ``text/calendar`` for calendar-app subscriptions.
+   *
+   * A wrong or missing token is a 404 rather than a 401, so the endpoint never
+   * confirms that a guessed calendar id exists.
+   */
+  async function serveFeed(
+    response: http.ServerResponse,
+    calendarId: string,
+    token: string,
+  ): Promise<void> {
+    const found = await accounts.findCalendar(calendarId);
+    if (found === null) throw notFound();
+    const store = calendars.get(found.accountId, calendarId);
+    await store.ensureLoaded();
+    const expected = store.feedToken;
+    if (expected === null || !constantTimeStringEqual(expected, token)) {
+      throw notFound();
+    }
+    const body = Buffer.from(await store.readIcs(), "utf8");
+    response.writeHead(200, {
+      "content-type": "text/calendar; charset=utf-8",
+      "content-length": body.length,
+      "content-disposition": `inline; filename="${slug(found.calendar.name)}.ics"`,
+      // Calendar apps refresh on their own schedule; a short cache keeps a busy
+      // client from hitting the server on every page it renders.
+      "cache-control": "private, max-age=300",
+    });
+    response.end(body);
   }
 
   function setSession(
@@ -339,6 +413,20 @@ export function itemPayload(item: RoutineItem): Record<string, unknown> {
     if (value !== undefined) payload[key] = value;
   }
   return payload;
+}
+
+/** The path a household adds to Google Calendar or Apple Calendar. */
+export function feedPath(calendarId: string, token: string): string {
+  return `/api/feed/${calendarId}/${token}.ics`;
+}
+
+/** A safe attachment filename derived from a calendar name. */
+function slug(name: string): string {
+  const cleaned = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return cleaned === "" ? "autiplanner" : cleaned;
 }
 
 function requireString(body: Record<string, unknown>, field: string): string {

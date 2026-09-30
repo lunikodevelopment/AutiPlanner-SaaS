@@ -48,12 +48,30 @@ export interface Session {
   readonly calendarId: string | null;
 }
 
+export interface CalendarRecord {
+  readonly id: string;
+  readonly name: string;
+  /** Path of the read-only .ics feed, once the server has minted a token. */
+  readonly feedPath?: string;
+}
+
+export interface MeResponse {
+  readonly account: { readonly id: string; readonly email: string };
+  readonly calendars: readonly CalendarRecord[];
+}
+
+export interface Feed {
+  readonly path: string;
+}
+
 export interface Api {
   register(email: string, password: string): Promise<Session>;
   login(email: string, password: string): Promise<Session>;
   logout(): Promise<void>;
   agenda(from: string, days: number): Promise<AgendaResponse>;
   command(request: CommandRequest): Promise<CommandResponse>;
+  me(): Promise<MeResponse>;
+  rotateFeed(calendarId: string): Promise<Feed>;
 }
 
 /**
@@ -93,6 +111,20 @@ export class HttpApi implements Api {
   async command(request: CommandRequest): Promise<CommandResponse> {
     const response = await this.request("POST", "/api/command", request);
     return (await response.json()) as CommandResponse;
+  }
+
+  async me(): Promise<MeResponse> {
+    const response = await this.request("GET", "/api/me");
+    return (await response.json()) as MeResponse;
+  }
+
+  async rotateFeed(calendarId: string): Promise<Feed> {
+    const response = await this.request(
+      "POST",
+      `/api/calendars/${encodeURIComponent(calendarId)}/feed/rotate`,
+    );
+    const body = (await response.json()) as { feed: Feed };
+    return body.feed;
   }
 
   private async post<T>(path: string, body: unknown): Promise<T> {

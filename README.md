@@ -63,12 +63,52 @@ Reading happens after writing on every sync. Reading first would briefly revert
 the interface to the pre-change state and make an offline edit look as though it
 undid itself the moment the network returned.
 
+## Home Assistant
+
+There are two pieces, and they are independent:
+
+- **The app** (`autiplanner_saas/`) runs this server on Home Assistant OS. Add
+  `https://github.com/lunikodevelopment/AutiPlanner-SaaS` as an app repository
+  and install **AutiPlanner (hosted)**. It needs the published image
+  `ghcr.io/lunikodevelopment/autiplanner-saas`; see [the app notes](autiplanner_saas/DOCS.md).
+- **The integration** (`custom_components/autiplanner_saas`) connects Home
+  Assistant to the API: a calendar entity, agenda sensors, and
+  `complete` / `mark_missed` / `skip` / `reset` plus CRUD actions. Install it
+  through HACS (add this repository as an **Integration**) or copy the folder.
+
+The integration is a client. It never owns a calendar file; the API is the single
+writer. The same four-state outcome and day part are preserved end to end. Full
+guide: [`docs/HA_INTEGRATION.md`](docs/HA_INTEGRATION.md).
+
+## Subscribe from Google Calendar or Apple Calendar
+
+Each calendar has a read-only `text/calendar` feed, addressed by a secret token
+so calendar software that cannot send an `Authorization` header can still fetch
+it:
+
+```text
+GET /api/feed/<calendarId>/<token>.ics
+```
+
+- **Google Calendar**: Other calendars → **+** → **From URL**. Google must be able
+  to reach the URL from the internet.
+- **Apple Calendar**: File → **New Calendar Subscription**. It can reach a Home
+  Assistant address on the same network.
+
+Find the URL in the web app's **Subscribe in Google or Apple Calendar** section,
+in the `feed_url` attribute of the `calendar.<name>` entity, or as `feedPath` on
+each calendar from `GET /api/me`. Rotating the token (web app, or
+`POST /api/calendars/<id>/feed/rotate`) invalidates the old URL.
+
+
 ## How it is put together
 
 ```
 apps/api     Node HTTP API, accounts, calendars, and the command endpoint
 apps/web     The PWA. TypeScript bundled with esbuild, no framework.
 packages/    Domain contracts and the iCalendar profile, shared with AutiPlanner
+custom_components/autiplanner_saas  Home Assistant integration (a client of this API)
+autiplanner_saas/                   Home Assistant app that runs this server
 ```
 
 There is no database. State is files:
@@ -100,6 +140,9 @@ All routes are under `/api`. Authentication is an `HttpOnly` session cookie, or
 | `POST` | `/api/command` | Apply one command. |
 | `POST` | `/api/calendars` | Add a calendar. |
 | `DELETE` | `/api/calendars/:id` | Remove a calendar. |
+| `GET` | `/api/calendars/:id/feed` | The subscription feed path, minting the token on first read. |
+| `POST` | `/api/calendars/:id/feed/rotate` | Replace the feed token, invalidating the old URL. |
+| `GET` | `/api/feed/:calendarId/:token.ics` | The read-only `.ics` feed. No authentication; the token is the credential. |
 
 A command is one of `complete`, `mark_missed`, `skip`, `reset`, `create`,
 `update`, `delete`. The response always carries the resulting item, never a bare

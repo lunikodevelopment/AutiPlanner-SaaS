@@ -46,6 +46,21 @@ jobs:
       # run of the real application.
       - run: pnpm test
 
+  home-assistant:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          # pytest-homeassistant-custom-component pins Home Assistant 2026.2.3,
+          # which is tested against this Python version.
+          python-version: "3.13"
+      # The pure helpers need nothing but the standard library.
+      - run: python -m unittest discover -s tests -t . -v
+      # Config-flow, entity, and service tests against a real Home Assistant.
+      - run: pip install -r requirements-test.txt
+      - run: pytest -v
+
   docker:
     runs-on: ubuntu-latest
     steps:
@@ -104,7 +119,7 @@ jobs:
   # host instead of being built there. Runs only for the default branch and for
   # version tags, and only after the image has been proved to work above.
   publish:
-    needs: [repository, typescript, test, docker]
+    needs: [repository, typescript, test, home-assistant, docker]
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
     permissions:

@@ -75,6 +75,15 @@ class FakeApi {
     if (url.pathname === "/api/command") {
       return this.command(body ?? {});
     }
+    if (url.pathname === "/api/me") {
+      return json(200, {
+        account: { id: "acc", email: "house@example.com" },
+        calendars: [{ id: "cal", name: "Routine", feedPath: "/api/feed/cal/token.ics" }],
+      });
+    }
+    if (url.pathname.endsWith("/feed/rotate")) {
+      return json(200, { feed: { path: "/api/feed/cal/rotated.ics" } });
+    }
     return json(404, { error: { code: "not_found", message: "no such route" } });
   }
 
@@ -238,6 +247,14 @@ test("signing in shows the planner", async () => {
   el<HTMLButtonElement>("create-account").click();
   await until(() => el("planner").hidden === false, "the planner to appear");
   assert.equal(api.authenticated, true);
+});
+
+test("shows the calendar subscription URL", async () => {
+  await until(() => el<HTMLInputElement>("feed-url").value !== "", "the feed URL to load");
+  assert.equal(
+    el<HTMLInputElement>("feed-url").value,
+    "http://127.0.0.1:8099/api/feed/cal/token.ics",
+  );
 });
 
 test("adding an item renders it in the right day part", async () => {
