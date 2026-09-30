@@ -46,6 +46,18 @@ The image is public, so it can be pulled anonymously. If you fork this
 repository and keep the fork private, the package stays private too: authenticate
 with a token that has `read:packages`, or make the package public.
 
+**Do not build the image for another CPU.** The app pulls a published
+multi-architecture image, so no local build is needed. Building for a foreign
+architecture (for example `linux/amd64` on an Apple Silicon Mac) runs the
+toolchain under QEMU and can fail with
+`qemu: uncaught target signal 4 (Illegal instruction)` at the esbuild step. Pull
+the right architecture instead:
+
+```bash
+docker pull --platform linux/amd64 ghcr.io/lunikodevelopment/autiplanner-saas:latest
+# or linux/arm64 for a Raspberry Pi / arm64 host
+```
+
 ## Offline behaviour
 
 The PWA is offline-first, not offline-tolerant.

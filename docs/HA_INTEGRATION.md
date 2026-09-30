@@ -193,6 +193,12 @@ log.
 **A repair says the server is unreachable.** The same cause. The repair clears
 itself once a poll succeeds.
 
+**A build fails with `qemu: uncaught target signal 4 (Illegal instruction)`.**
+You are building the image for a different CPU than the machine you are on. The
+app does not need a build; it pulls a published multi-architecture image. Pull
+the matching architecture (`--platform linux/amd64`, or `linux/arm64` for a Pi)
+instead, or run the build on a host with that CPU.
+
 ## Known limits
 
 - The integration polls; it does not hold a push connection to the server.

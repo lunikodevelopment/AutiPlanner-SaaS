@@ -25,6 +25,13 @@ Installing the AutiPlanner integration through HACS does not install or start
 this app. HACS installs the integration only; the app is a separate step, and an
 integration cannot start an app for you.
 
+The app pulls a published multi-architecture image. You never build it:
+installing it here does not compile anything. If you instead build the image
+yourself for a different CPU (for example `linux/amd64` on an Apple Silicon Mac),
+the toolchain runs under QEMU and can fail with
+`qemu: uncaught target signal 4 (Illegal instruction)`. Pull the right
+architecture instead of building.
+
 The app needs the published image, `ghcr.io/lunikodevelopment/autiplanner-saas`.
 That container package must be public; if the install fails with a pull error,
 make the package public (see the repository README).
