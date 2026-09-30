@@ -51,13 +51,27 @@ jobs:
       # Domain packages, API integration tests, PWA offline rules, and a jsdom
       # run of the real application and of the dashboard card.
       - run: pnpm test
-      # HACS serves the card from autiplanner-card.js in the repository, so the
-      # committed bundle is what users get. Rebuilding it and diffing proves it is
-      # not stale, which a test on the TypeScript source cannot show.
-      - name: The committed card bundle is up to date
+      # The card is served to Home Assistant from its own repository, so what
+      # users download is compared against a fresh build here. A test on the
+      # TypeScript source cannot show that the published artifact is current,
+      # and a stale bundle would pass every other job.
+      - name: The published card matches a fresh build
+        env:
+          PUBLISHED_CARD: https://raw.githubusercontent.com/lunikodevelopment/AutiPlanner-Card/main/autiplanner-card.js
         run: |
+          set -euo pipefail
           pnpm --filter @autiplanner/card build
           git diff --exit-code -- autiplanner-card.js
+          if ! curl -fsS "$PUBLISHED_CARD" -o /tmp/published-card.js; then
+            echo "::error::the card repository is not published yet. Run tools/sync-card-repo.sh"
+            exit 1
+          fi
+          if ! diff -q /tmp/published-card.js autiplanner-card.js >/dev/null; then
+            echo "::error::AutiPlanner-Card serves a different bundle than this build. Run tools/sync-card-repo.sh"
+            diff /tmp/published-card.js autiplanner-card.js | head -20 || true
+            exit 1
+          fi
+          echo "the published card matches this build"
 
   home-assistant:
     runs-on: ubuntu-latest

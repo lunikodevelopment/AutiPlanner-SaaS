@@ -93,11 +93,13 @@ There are three pieces, and they are independent:
   `complete` / `mark_missed` / `skip` / `reset` plus CRUD actions. Install it
   through HACS (add this repository as an **Integration**) or copy the folder.
 
-- **The card** (`autiplanner-card.js`) is a Lovelace card for the routine: change
-  an item's outcome or add a new one from the dashboard. Add this same
-  repository to HACS a second time, with the category **Dashboard**. It draws
-  the integration's agenda sensor and acts through its actions, so it holds no
-  credential of its own. Guide: [`docs/HA_CARD.md`](docs/HA_CARD.md).
+- **The card** ([`AutiPlanner-Card`](https://github.com/lunikodevelopment/AutiPlanner-Card))
+  is a Lovelace card for the routine: change an item's outcome or add a new one
+  from the dashboard. Its source is `apps/card` here and is published to its own
+  repository, because a HACS repository carries one category and an integration
+  and a dashboard card are two. It draws the integration's agenda sensor and acts
+  through its actions, so it holds no credential of its own. Guide:
+  [`docs/HA_CARD.md`](docs/HA_CARD.md).
 
 > Installing the integration through HACS does **not** install or start the app.
 > HACS installs Python code only, and an integration cannot start a container.
@@ -152,7 +154,7 @@ apps/card    The Lovelace card. Same build, no framework, no credential.
 packages/    Domain contracts and the iCalendar profile, shared with AutiPlanner
 custom_components/autiplanner_saas  Home Assistant integration (a client of this API)
 autiplanner_saas/                   Home Assistant app that runs this server
-autiplanner-card.js                 Built card, served to HACS from the repository
+autiplanner-card.js                 Built card, compared against what AutiPlanner-Card serves
 ```
 
 There is no database. State is files:

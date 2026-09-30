@@ -8,26 +8,32 @@ agenda sensor the integration already polls and changes state through the
 integration's actions, so no AutiPlanner credential ever reaches the browser and
 the server keeps a single writer.
 
+The card ships from its own repository,
+[`AutiPlanner-Card`](https://github.com/lunikodevelopment/AutiPlanner-Card),
+because a HACS repository is added with a single category and an integration and
+a dashboard card are different categories. Its source is here, in `apps/card`,
+and is published to that repository on release.
+
 ## Install
 
-HACS treats each category as a separate entry, so this repository is added
-**twice**: once as the integration, once as the card.
-
 1. **HACS → ⋮ → Repositories → Add custom repository**.
-2. Repository: `https://github.com/lunikodevelopment/AutiPlanner-SaaS`
+2. Repository: `https://github.com/lunikodevelopment/AutiPlanner-Card`
 3. **Category: Dashboard** — HACS calls plugins "Dashboard" in this list, even
    though the underlying category is `plugin`.
-4. **Add**, then install **AutiPlanner (hosted)** from the **Dashboard** section.
+4. **Add**, then install **AutiPlanner card** from the **Dashboard** section.
+
+This repository is added separately, as an **Integration**, for the integration
+itself. Two repositories, two entries, no tricks.
 
 HACS registers the card as a dashboard resource for you. If it cannot (a
 YAML-mode dashboard, or a Lovelace that is not in storage mode) it says so in the
 log; add the resource by hand under **Settings → Dashboards → ⋮ → Resources**:
 
 ```text
-/url /hacsfiles/AutiPlanner-SaaS/autiplanner-card.js?v=1
+/url /hacsfiles/AutiPlanner-Card/autiplanner-card.js?v=1
 ```
 
-The integration itself must be installed and set up first — see
+The integration must be installed and set up first — see
 [`HA_INTEGRATION.md`](HA_INTEGRATION.md). The card needs the integration's
 agenda sensor to have something to draw.
 
@@ -118,8 +124,11 @@ correct if you have more than one. If not, one of them names the wrong `entity`.
 ```bash
 pnpm --filter @autiplanner/card test    # jsdom run of the real element
 pnpm --filter @autiplanner/card build   # writes autiplanner-card.js
+./tools/sync-card-repo.sh               # publishes it to AutiPlanner-Card
 ```
 
-`autiplanner-card.js` at the repository root is build output that is committed,
-because HACS serves that file to Home Assistant. CI rebuilds it and fails if the
-committed copy differs, so it cannot silently go stale.
+`autiplanner-card.js` at the repository root is build output that is committed:
+it is the artifact compared against what `AutiPlanner-Card` serves, so CI fails
+if the two differ. `apps/card/repo/` holds the card repository's own `hacs.json`,
+`README.md`, and `LICENSE`; the sync script assembles those with the bundle and
+pushes the result.
