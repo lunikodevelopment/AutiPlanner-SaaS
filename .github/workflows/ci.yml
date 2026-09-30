@@ -271,37 +271,51 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
 
+      # The tag list arrives through the environment, never spliced into the
+      # script. metadata-action returns it newline separated, so writing
+      # `for tag in ${{ steps.meta.outputs.tags }}` into a run block expands to
+      # one word per line and the shell reads the following line as a command of
+      # its own. It failed that way three times before this was found.
       - name: Create the multi-architecture manifest
+        env:
+          RELEASE_TAGS: ${{ steps.meta.outputs.tags }}
+          STAGING_PREFIX: build-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           set -euo pipefail
-          tags=""
-          for tag in ${{ steps.meta.outputs.tags }}; do
-            tags="$tags -t $tag"
-          done
-          # An empty tag list would make imagetools create an untagged manifest
-          # and look like it worked.
-          if [ -z "$tags" ]; then
+          args=()
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            args+=("-t" "$tag")
+          done <<< "$RELEASE_TAGS"
+          # An empty list would make imagetools create an untagged manifest and
+          # look like it worked.
+          if [ ${#args[@]} -eq 0 ]; then
             echo "ERROR: metadata-action resolved no tags to publish"
             exit 1
           fi
-          echo "Joining the per-architecture builds into:$tags"
+          sources=(
+            "ghcr.io/lunikodevelopment/autiplanner-saas:${STAGING_PREFIX}-amd64"
+            "ghcr.io/lunikodevelopment/autiplanner-saas:${STAGING_PREFIX}-arm64"
+          )
+          echo "Joining ${#sources[@]} builds into ${args[*]}"
           # Echoed before the join, so a failure says what it was given rather
           # than only that it failed.
-          for arch in amd64 arm64; do
-            ref="ghcr.io/lunikodevelopment/autiplanner-saas:build-${{ github.run_id }}-${{ github.run_attempt }}-$arch"
+          for ref in "${sources[@]}"; do
             echo "--- $ref"
             docker buildx imagetools inspect "$ref" | grep -E "MediaType|Digest|Platform" || true
           done
-          # shellcheck disable=SC2086
-          docker buildx imagetools create $tags "ghcr.io/lunikodevelopment/autiplanner-saas:build-${{ github.run_id }}-${{ github.run_attempt }}-amd64" "ghcr.io/lunikodevelopment/autiplanner-saas:build-${{ github.run_id }}-${{ github.run_attempt }}-arm64"
+          docker buildx imagetools create "${args[@]}" "${sources[@]}"
 
       # Checked before the staging tags are removed, so a failure leaves the
       # evidence in the registry to look at.
       - name: The manifest carries both architectures
+        env:
+          RELEASE_TAGS: ${{ steps.meta.outputs.tags }}
         run: |
           set -uo pipefail
           failed=no
-          for tag in ${{ steps.meta.outputs.tags }}; do
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
             # Captured rather than piped: under pipefail a `grep -q` that exits on
             # the first match kills the writer with SIGPIPE and the pipeline
             # fails even though the match succeeded.
@@ -317,7 +331,7 @@ jobs:
                 *) echo "ERROR: $tag is missing $arch"; failed=yes ;;
               esac
             done
-          done
+          done <<< "$RELEASE_TAGS"
           if [ "$failed" = "yes" ]; then
             exit 1
           fi
@@ -326,9 +340,10 @@ jobs:
             echo
             echo "| Tag | Architectures |"
             echo "|---|---|"
-            for tag in ${{ steps.meta.outputs.tags }}; do
+            while IFS= read -r tag; do
+              [ -n "$tag" ] || continue
               echo "| \`$tag\` | linux/amd64, linux/arm64 |"
-            done
+            done <<< "$RELEASE_TAGS"
           } >> "$GITHUB_STEP_SUMMARY"
 
       # Publish runs on every push to main, so the staging tags would pile up in
@@ -337,9 +352,11 @@ jobs:
       # is already published, and a failed release must stay debuggable.
       - name: Remove the staging tags
         if: success()
+        env:
+          STAGING_PREFIX: build-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           for arch in amd64 arm64; do
-            ref="ghcr.io/lunikodevelopment/autiplanner-saas:build-${{ github.run_id }}-${{ github.run_attempt }}-$arch"
+            ref="ghcr.io/lunikodevelopment/autiplanner-saas:${STAGING_PREFIX}-${arch}"
             digest=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$ref" 2>/dev/null || true)
             if [ -n "$digest" ]; then
               curl -fsS -X DELETE \
