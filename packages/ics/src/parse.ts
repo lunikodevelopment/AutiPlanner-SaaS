@@ -7,6 +7,7 @@ import {
 import {
   ICS_DATE_PROPERTY,
   ICS_DAY_PART_PROPERTY,
+  ICS_ICON_PROPERTY,
   ICS_ORDER_PROPERTY,
   ICS_OUTCOME_PROPERTY,
   ICS_REVISION_PROPERTY,
@@ -368,6 +369,7 @@ function parseVtodo(
   );
   const routineId = textValue(firstProperty(properties, ICS_ROUTINE_ID_PROPERTY, issues, uid));
   const description = textValue(firstProperty(properties, "DESCRIPTION", issues, uid));
+  const icon = readIcon(properties, issues, uid);
   const tags = readTags(properties, issues, uid);
   const extensions = readExtensions(properties, issues, uid);
 
@@ -391,6 +393,7 @@ function parseVtodo(
   if (order !== undefined) item.order = order;
   if (routineId !== undefined && routineId.length > 0) item.routineId = routineId;
   if (revision !== undefined) item.revision = revision;
+  if (icon !== undefined) item.icon = icon;
   if (tags !== undefined) item.tags = tags;
   if (extensions !== undefined) item.extensions = extensions;
   return item;
@@ -713,6 +716,30 @@ function readTags(
   return tags.length > 0 ? tags : undefined;
 }
 
+const ICON_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+
+/**
+ * The icon name, or undefined.
+ *
+ * A name that is not the shape an icon name has is reported and ignored rather
+ * than rejecting the routine: a file written by a newer release than this one
+ * should still load, it just draws without a picture.
+ */
+function readIcon(
+  properties: readonly ContentLine[],
+  issues: IcsIssue[],
+  uid: string | undefined,
+): string | undefined {
+  const property = firstProperty(properties, ICS_ICON_PROPERTY, issues, uid);
+  const value = textValue(property)?.trim();
+  if (value === undefined || value.length === 0) return undefined;
+  if (!ICON_PATTERN.test(value)) {
+    issues.push(makeIssue("invalid-icon", `icon is not an icon name: ${value}`, 0, uid));
+    return undefined;
+  }
+  return value;
+}
+
 function readExtensions(
   properties: readonly ContentLine[],
   issues: IcsIssue[],
@@ -796,6 +823,8 @@ function parseSeries(
   if (description) series.description = description;
   const order = readInteger(properties, ICS_ORDER_PROPERTY, "invalid-order", issues, uid, true);
   if (order !== undefined) series.order = order;
+  const seriesIcon = readIcon(properties, issues, uid);
+  if (seriesIcon !== undefined) series.icon = seriesIcon;
   const exdates = readDateList(properties, "EXDATE");
   const rdates = readDateList(properties, "RDATE");
   if (exdates.length > 0) series.exdates = exdates;

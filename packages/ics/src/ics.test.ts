@@ -8,6 +8,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { expandSeries } from "@autiplanner/core";
 import { parseCalendar } from "./parse.js";
 import { serializeCalendar, serializeEventCalendar, serializeItems } from "./serialize.js";
 import { IcsSerializeError } from "./types.js";
@@ -333,7 +334,10 @@ test("preserves unknown AutiPlanner extensions and unmodeled components", () => 
     ),
   );
   assert.equal(parsed.items.length, 1);
-  assert.equal(parsed.items[0]?.extensions?.["X-AUTIPLANNER-ICON"], "pill");
+  // The icon is a modelled field now, read off the property rather than kept as
+  // an opaque extension. An extension nobody models is still preserved.
+  assert.equal(parsed.items[0]?.icon, "pill");
+  assert.equal(parsed.items[0]?.extensions?.["X-AUTIPLANNER-ICON"], undefined);
   assert.equal(parsed.items[0]?.extensions?.["X-AUTIPLANNER-NOTE"], "keep me");
   assert.equal(parsed.items[0]?.start, undefined);
   assert.equal(parsed.items[0]?.date, "2026-08-11");
@@ -487,4 +491,80 @@ test("the event projection can advertise a refresh interval", () => {
   });
   assert.match(written, /REFRESH-INTERVAL;VALUE=DURATION:PT1M/);
   assert.match(written, /X-PUBLISHED-TTL:PT1M/);
+});
+
+test("an icon survives the round trip, on an item and on a series", () => {
+  const items: RoutineItem[] = [
+    {
+      uid: "meds@autiplanner.local",
+      title: "Take medication",
+      date: "2026-08-11",
+      dayPart: "morning",
+      status: "pending",
+      icon: "pill",
+    },
+  ];
+  const series: RoutineTemplate[] = [
+    {
+      uid: "swim@autiplanner.local",
+      title: "Swimming",
+      date: "2026-08-12",
+      dayPart: "afternoon",
+      icon: "person-simple-walk",
+      recurrence: { freq: "weekly", byDay: ["WE"] },
+    },
+  ];
+  const written = serializeCalendar({ items, series, preserved: [] });
+  assert.match(written, /X-AUTIPLANNER-ICON:pill/);
+  assert.match(written, /X-AUTIPLANNER-ICON:person-simple-walk/);
+
+  const read = parseCalendar(written);
+  assert.equal(read.items[0]?.icon, "pill");
+  assert.equal(read.series[0]?.icon, "person-simple-walk");
+  // Mapped, so it is not also kept as an unknown extension.
+  assert.equal(read.items[0]?.extensions?.["X-AUTIPLANNER-ICON"], undefined);
+});
+
+test("an occurrence carries the icon of the series it came from", () => {
+  const series: RoutineTemplate[] = [
+    {
+      uid: "swim@autiplanner.local",
+      title: "Swimming",
+      date: "2026-08-12",
+      dayPart: "afternoon",
+      icon: "person-simple-walk",
+      recurrence: { freq: "weekly", byDay: ["WE"] },
+    },
+  ];
+  const [occurrence] = expandSeries(series[0]!, "2026-08-12", "2026-08-19");
+  assert.equal(occurrence?.icon, "person-simple-walk");
+  // And it travels into the file the same way.
+  const written = serializeCalendar({ items: [occurrence!], series: [], preserved: [] });
+  assert.match(written, /X-AUTIPLANNER-ICON:person-simple-walk/);
+});
+
+test("a name that is not an icon name is reported and ignored, not fatal", () => {
+  const parsed = parseCalendar(
+    calendar(
+      [
+        vtodo([
+          "UID:meds@autiplanner.local",
+          "DTSTAMP:20260811T060000Z",
+          "DTSTART;VALUE=DATE:20260811",
+          "SUMMARY:Take medication",
+          "STATUS:NEEDS-ACTION",
+          "X-AUTIPLANNER-DAYPART:MORNING",
+          "X-AUTIPLANNER-OUTCOME:PENDING",
+          "X-AUTIPLANNER-ICON:Pill With Spaces",
+        ]),
+      ].join("\r\n"),
+    ),
+  );
+  // The routine still loads: losing a routine over a picture would be worse.
+  assert.equal(parsed.items.length, 1);
+  assert.equal(parsed.items[0]?.icon, undefined);
+  assert.ok(
+    parsed.issues.some((issue) => issue.code === "invalid-icon"),
+    `expected an invalid-icon issue, saw ${parsed.issues.map((issue) => issue.code).join(", ")}`,
+  );
 });

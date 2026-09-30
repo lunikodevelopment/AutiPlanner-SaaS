@@ -24,6 +24,7 @@ export const MAPPED_EXTENSION_PROPERTIES: readonly string[] = [
   ICS_ROUTINE_ID_PROPERTY,
   ICS_REVISION_PROPERTY,
   ICS_DATE_PROPERTY,
+  ICS_ICON_PROPERTY,
 ];
 
 export const DAY_PART_TO_ICS: Readonly<Record<DayPart, string>> = {

@@ -51,6 +51,7 @@ export interface RoutineItemPatch {
   routineId?: string | null;
   revision?: number | null;
   tags?: readonly string[] | null;
+  icon?: string | null;
   extensions?: Readonly<Record<string, string>> | null;
 }
 
@@ -338,6 +339,7 @@ function applyPatch(item: RoutineItem, patch: RoutineItemPatch): RoutineItem {
   assign(next, "routineId", pick(patch.routineId, item.routineId));
   assign(next, "revision", pick(patch.revision, item.revision));
   assign(next, "tags", copyTags(pick(patch.tags, item.tags)));
+  assign(next, "icon", pick(patch.icon, item.icon));
   assign(next, "extensions", copyExtensions(pick(patch.extensions, item.extensions)));
   return next;
 }
@@ -380,6 +382,7 @@ function cloneItem(item: RoutineItem): RoutineItem {
   assign(next, "routineId", item.routineId);
   assign(next, "revision", item.revision);
   assign(next, "tags", copyTags(item.tags));
+  assign(next, "icon", item.icon);
   assign(next, "extensions", copyExtensions(item.extensions));
   return next;
 }
@@ -409,6 +412,7 @@ function cloneTemplate(template: RoutineTemplate): RoutineTemplate {
     due: template.due,
     timezone: template.timezone,
     order: template.order,
+    icon: template.icon,
     tags: copyTags(template.tags),
     extensions: copyExtensions(template.extensions),
     exdates: template.exdates ? [...template.exdates] : undefined,
@@ -475,6 +479,7 @@ function stable(item: RoutineItem): string {
     routineId: item.routineId ?? null,
     revision: item.revision ?? null,
     tags: item.tags ? [...item.tags] : [],
+    icon: item.icon ?? null,
     extensions: extensionKeys.map((key) => [key, item.extensions?.[key] ?? null]),
   });
 }

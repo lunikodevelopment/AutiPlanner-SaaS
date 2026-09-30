@@ -44,6 +44,15 @@ export interface RoutineItem {
 
   tags?: readonly string[];
 
+  /**
+   * A routine icon name, as the icon set spells it.
+   *
+   * Not validated against the set here: the domain stores what it is given, and
+   * a name from a newer release simply draws nothing. Rejecting a routine over
+   * a picture would lose the routine.
+   */
+  icon?: string;
+
   /** Unknown AutiPlanner extension properties preserved during round trips. */
   extensions?: Readonly<Record<string, string>>;
 }
@@ -59,6 +68,9 @@ export interface RoutineMutationResult {
 }
 
 const EXTENSION_KEY = /^X-AUTIPLANNER-[A-Z0-9-]+$/;
+
+/** Kebab-case, the shape every icon in the set has. */
+const ICON_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 export function isDayPart(value: string): value is DayPart {
   return (DAY_PARTS as readonly string[]).includes(value);
@@ -79,6 +91,9 @@ export function validateRoutineItem(item: RoutineItem): readonly string[] {
   if (!isDayPart(item.dayPart)) errors.push("dayPart is not a known day part");
   if (!isRoutineStatus(item.status)) {
     errors.push("status is not a known outcome");
+  }
+  if (item.icon !== undefined && !ICON_NAME.test(item.icon)) {
+    errors.push("icon must be a lowercase icon name");
   }
 
   if (item.start !== undefined && !isIsoTimestamp(item.start)) {

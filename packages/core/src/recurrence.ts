@@ -38,6 +38,7 @@ export interface RoutineTemplate {
   due?: string;
   timezone?: string;
   order?: number;
+  icon?: string;
   tags?: readonly string[];
   extensions?: Readonly<Record<string, string>>;
   exdates?: readonly string[];
@@ -297,6 +298,7 @@ function synthesize(template: RoutineTemplate, date: string): RoutineItem {
   if (due !== undefined) item.due = due;
   if (template.timezone !== undefined) item.timezone = template.timezone;
   if (template.order !== undefined) item.order = template.order;
+  if (template.icon !== undefined) item.icon = template.icon;
   if (template.tags !== undefined) item.tags = [...template.tags];
   if (template.extensions !== undefined) item.extensions = { ...template.extensions };
   return item;

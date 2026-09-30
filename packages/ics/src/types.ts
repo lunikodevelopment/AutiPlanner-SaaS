@@ -28,6 +28,7 @@ export const ICS_ISSUE_CODES = [
   "duplicate-uid",
   "invalid-order",
   "invalid-revision",
+  "invalid-icon",
   "dropped-nested-component",
   "unsupported-recurrence",
   "unsupported-property",

@@ -12,6 +12,7 @@ import {
   DAY_PART_TO_ICS,
   ICS_DATE_PROPERTY,
   ICS_DAY_PART_PROPERTY,
+  ICS_ICON_PROPERTY,
   ICS_ORDER_PROPERTY,
   ICS_OUTCOME_PROPERTY,
   ICS_REVISION_PROPERTY,
@@ -126,6 +127,7 @@ function serializeSeries(series: RoutineTemplate, dtstamp: Date): string[] {
   lines.push(propertyLine(ICS_DAY_PART_PROPERTY, DAY_PART_TO_ICS[series.dayPart]));
   lines.push(propertyLine(ICS_OUTCOME_PROPERTY, "PENDING"));
   if (series.order !== undefined) lines.push(propertyLine(ICS_ORDER_PROPERTY, String(series.order)));
+  if (series.icon !== undefined) lines.push(propertyLine(ICS_ICON_PROPERTY, series.icon));
   lines.push("END:VTODO");
   return lines;
 }
@@ -159,6 +161,7 @@ function serializeItem(item: RoutineItem, dtstamp: Date): string[] {
     lines.push(propertyLine("RECURRENCE-ID", item.date.replaceAll("-", ""), ["VALUE=DATE"]));
   }
   if (item.order !== undefined) lines.push(propertyLine(ICS_ORDER_PROPERTY, String(item.order)));
+  if (item.icon !== undefined) lines.push(propertyLine(ICS_ICON_PROPERTY, item.icon));
   if (item.routineId !== undefined) {
     lines.push(textProperty(ICS_ROUTINE_ID_PROPERTY, item.routineId));
   }
@@ -250,6 +253,9 @@ function serializeEvent(item: RoutineItem, dtstamp: Date): string[] {
   lines.push(propertyLine(ICS_OUTCOME_PROPERTY, STATUS_TO_ICS_OUTCOME[item.status]));
   if (item.order !== undefined) {
     lines.push(propertyLine(ICS_ORDER_PROPERTY, String(item.order)));
+  }
+  if (item.icon !== undefined) {
+    lines.push(propertyLine(ICS_ICON_PROPERTY, item.icon));
   }
   if (item.tags && item.tags.length > 0) {
     lines.push(propertyLine("CATEGORIES", joinEscapedList(item.tags)));

@@ -11,9 +11,10 @@ import test from "node:test";
 import {
   RoutineCommandError,
   addSeries,
+  complete,
+  create,
   deleteSeries,
   update,
-  complete,
 } from "./commands.js";
 import { materializeOccurrence, occurrenceForUid, type RoutineTemplate } from "./recurrence.js";
 import { validateRecurrence, validateTemplate } from "./recurrence.js";
@@ -182,4 +183,50 @@ test("a repeating routine's title can be corrected without losing the rule", () 
   const changed = update([occurrence], occurrence.uid, { title: "Swimming lesson" });
   assert.equal(changed.result.item.title, "Swimming lesson");
   assert.equal(changed.result.item.routineId, "swimming@example");
+});
+
+test("an icon is carried on an item, a template, and their occurrences", () => {
+  const withIcon = oneOff({ icon: "pill" });
+  const outcome = create([], withIcon);
+  assert.equal(outcome.result.item.icon, "pill");
+
+  // A series carries it, and every occurrence inherits it, so the drawing does
+  // not depend on which day is being looked at.
+  const template = weekly({ icon: "person-simple-walk" });
+  const stored = addSeries([], [], template);
+  assert.equal(stored.series[0]?.icon, "person-simple-walk");
+  const occurrence = occurrenceForUid(stored.series, "swimming@example:2026-10-07");
+  assert.equal(occurrence?.icon, "person-simple-walk");
+});
+
+test("an icon can be corrected or cleared without touching the routine", () => {
+  const outcome = create([], oneOff({ icon: "pill" }));
+  const changed = update(outcome.items, "dentist@example", { icon: "hospital" });
+  assert.equal(changed.result.item.icon, "hospital");
+  // Clearing it is a real state, not a missing patch.
+  const cleared = update(changed.items, "dentist@example", { icon: null });
+  assert.equal(cleared.result.item.icon, undefined);
+  assert.equal(cleared.result.item.title, "Dentist");
+});
+
+test("an icon name of the wrong shape is refused, an unknown one is not", () => {
+  // Shape is the domain's business; whether a name exists is the icon set's.
+  assert.throws(
+    () => create([], oneOff({ icon: "Pill With Spaces" })),
+    (error: unknown) =>
+      error instanceof RoutineCommandError &&
+      error.code === "invalid-item" &&
+      error.details.some((detail) => detail.includes("icon")),
+  );
+
+  // A name from a newer release loads; it simply draws nothing.
+  const future = create([], oneOff({ icon: "some-future-icon" }));
+  assert.equal(future.result.item.icon, "some-future-icon");
+});
+
+test("a stored template copies its icon rather than sharing the caller's", () => {
+  const template = weekly({ icon: "repeat" });
+  const stored = addSeries([], [], template);
+  template.icon = "flag";
+  assert.equal(stored.series[0]?.icon, "repeat");
 });

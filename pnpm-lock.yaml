@@ -61,6 +61,12 @@ importers:
 
   packages/core: {}
 
+  packages/icons:
+    devDependencies:
+      '@phosphor-icons/core':
+        specifier: 2.1.1
+        version: 2.1.1
+
   packages/ics:
     dependencies:
       '@autiplanner/core':
@@ -281,6 +287,9 @@ packages:
     peerDependenciesMeta:
       '@noble/hashes':
         optional: true
+
+  '@phosphor-icons/core@2.1.1':
+    resolution: {integrity: sha512-v4ARvrip4qBCImOE5rmPUylOEK4iiED9ZyKjcvzuezqMaiRASCHKcRIuvvxL/twvLpkfnEODCOJp5dM4eZilxQ==}
 
   '@types/jsdom@30.0.0':
     resolution: {integrity: sha512-uAHGxujGE0cDaKGdK28zgDotFtNA7MKq5DXl8LrfdxdCI8VHcg15oJz+amHTChPNI5JpgEPQWc2xFdrw3em/nQ==}
@@ -544,6 +553,8 @@ snapshots:
     optional: true
 
   '@exodus/bytes@1.16.0': {}
+
+  '@phosphor-icons/core@2.1.1': {}
 
   '@types/jsdom@30.0.0':
     dependencies:
