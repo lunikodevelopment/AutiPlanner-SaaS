@@ -84,6 +84,7 @@ _ITEM_SCHEMA = vol.Schema(
         vol.Optional("timezone"): cv.string,
         vol.Optional("completed_at"): cv.string,
         vol.Optional("order"): vol.Coerce(int),
+        vol.Optional("icon"): cv.string,
     },
     extra=vol.ALLOW_EXTRA,
 )
@@ -101,6 +102,7 @@ _SERIES_SCHEMA = vol.Schema(
         vol.Optional("due"): cv.string,
         vol.Optional("timezone"): cv.string,
         vol.Optional("order"): vol.Coerce(int),
+        vol.Optional("icon"): cv.string,
         vol.Optional("exdates"): [cv.string],
         vol.Optional(ATTR_EXPECTED_REVISION): vol.Coerce(int),
     },
@@ -122,6 +124,7 @@ _UPDATE_SCHEMA = vol.Schema(
         vol.Optional("timezone"): cv.string,
         vol.Optional("completed_at"): cv.string,
         vol.Optional("order"): vol.Coerce(int),
+        vol.Optional("icon"): cv.string,
     },
     extra=vol.ALLOW_EXTRA,
 )
@@ -288,6 +291,7 @@ def _series_from_service(payload: dict) -> RoutineTemplate:
         due=payload.get("due"),
         timezone=payload.get("timezone"),
         order=payload.get("order"),
+        icon=payload.get("icon"),
         exdates=payload.get("exdates"),
     )
 
@@ -336,6 +340,7 @@ def _item_from_service(payload: dict) -> RoutineItem:
         timezone=payload.get("timezone"),
         completed_at=completed_at,
         order=payload.get("order"),
+        icon=payload.get("icon"),
     )
 
 
@@ -350,6 +355,7 @@ _PATCH_KEYS = {
     "timezone": "timezone",
     "completed_at": "completedAt",
     "order": "order",
+    "icon": "icon",
 }
 
 

@@ -14,9 +14,15 @@ import {
   complete,
   create,
   deleteSeries,
+  excludeOccurrence,
   update,
 } from "./commands.js";
-import { materializeOccurrence, occurrenceForUid, type RoutineTemplate } from "./recurrence.js";
+import {
+  expandSeries,
+  materializeOccurrence,
+  occurrenceForUid,
+  type RoutineTemplate,
+} from "./recurrence.js";
 import { validateRecurrence, validateTemplate } from "./recurrence.js";
 import type { RoutineItem } from "./model.js";
 
@@ -229,4 +235,37 @@ test("a stored template copies its icon rather than sharing the caller's", () =>
   const stored = addSeries([], [], template);
   template.icon = "flag";
   assert.equal(stored.series[0]?.icon, "repeat");
+});
+
+test("one day of a repeat can be left out without ending the repeat", () => {
+  // A day that was never recorded has no stored item to delete, so the day is
+  // excluded from the rule instead.
+  const stored = addSeries([], [], weekly());
+  const outcome = excludeOccurrence(stored.series, "swimming@example:2026-10-14");
+  assert.ok(outcome !== null);
+  assert.deepEqual(outcome.series[0]?.exdates, ["2026-10-14"]);
+
+  // And the expansion honours it, so that Wednesday disappears while the rest
+  // of the rule carries on.
+  const dates = expandSeries(outcome.series[0]!, "2026-09-30", "2026-10-29").map(
+    (item) => item.date,
+  );
+  assert.deepEqual(dates, ["2026-09-30", "2026-10-07", "2026-10-21", "2026-10-28"]);
+});
+
+test("excluding the same day twice does not list it twice", () => {
+  const stored = addSeries([], [], weekly({ exdates: ["2026-10-21"] }));
+  const outcome = excludeOccurrence(stored.series, "swimming@example:2026-10-14");
+  assert.deepEqual(outcome?.series[0]?.exdates, ["2026-10-14", "2026-10-21"]);
+  const again = excludeOccurrence(outcome!.series, "swimming@example:2026-10-14");
+  assert.deepEqual(again?.series[0]?.exdates, ["2026-10-14", "2026-10-21"]);
+});
+
+test("excluding a day that is not part of any series says so", () => {
+  const stored = addSeries([], [], weekly());
+  assert.equal(excludeOccurrence(stored.series, "nobody@example:2026-10-14"), null);
+  assert.equal(excludeOccurrence(stored.series, "swimming@example"), null);
+  assert.equal(excludeOccurrence(stored.series, "swimming@example:nonsense"), null);
+  // Before the series starts is not part of it.
+  assert.equal(excludeOccurrence(stored.series, "swimming@example:2026-09-23"), null);
 });

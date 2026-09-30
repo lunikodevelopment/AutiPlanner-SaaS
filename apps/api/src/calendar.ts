@@ -4,6 +4,7 @@ import {
   create,
   deleteItem,
   deleteSeries,
+  excludeOccurrence,
   expandSeries,
   isCalendarDate,
   markMissed,
@@ -292,6 +293,17 @@ export class CalendarStore {
             this.items = [...outcome.items];
             this.series = [...outcome.series];
             return { item: null, changed: outcome.changed };
+          }
+          // A day of a repeat is removed by excluding it: until something was
+          // recorded against it there is no document to delete, only a day the
+          // rule generates.
+          const excluded = excludeOccurrence(this.series, input.uid);
+          if (excluded !== null) {
+            this.series = [...excluded.series];
+            // A day that had been recorded goes too, or it would come back as a
+            // one-off item on a day the repeat no longer covers.
+            this.items = this.items.filter((item) => item.uid !== input.uid);
+            return { item: null, changed: true };
           }
           const outcome = deleteItem(this.items, input.uid);
           this.items = [...outcome.items];

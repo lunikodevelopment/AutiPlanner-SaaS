@@ -58,6 +58,9 @@ CORE_MODEL = (
 #: with no explanation.
 REQUIRED = ("uid", "title", "date", "dayPart", "status")
 
+#: Optional, but a field the clients read when it is there.
+OPTIONAL_READ = ("icon",)
+
 #: The sensor attributes the card reads. `window_start` and `window_end` are
 #: deliberately absent: the card shows its own day headings and never needed
 #: them, so they are not part of the contract.
@@ -79,6 +82,7 @@ def _items() -> list[RoutineItem]:
             day_part="morning",
             status="pending",
             start="2026-09-30T08:30:00",
+            icon="pill",
         ),
         RoutineItem(
             uid="walk-20260930@example",
@@ -88,6 +92,7 @@ def _items() -> list[RoutineItem]:
             status="completed",
             start="2026-09-30T18:00:00",
             completed_at="2026-09-30T18:10:00",
+            icon="person-simple-walk",
         ),
         RoutineItem(
             uid="breathing-20260930@example",
@@ -170,6 +175,40 @@ class CardContractTest(unittest.TestCase):
         for payload in state["attributes"]["items"]:
             for field in REQUIRED:
                 self.assertIn(field, payload)
+
+    def test_the_icon_reaches_the_client_and_the_fixture(self) -> None:
+        # The three shapes that must agree: the API's itemPayload, this
+        # integration, and the sibling integration. An icon stored here has to
+        # survive into what a client reads, or the picker would look broken.
+        payload = item_to_attributes(
+            RoutineItem(
+                uid="a",
+                title="Take medication",
+                date="2026-09-30",
+                day_part="morning",
+                status="pending",
+                icon="pill",
+            )
+        )
+        self.assertEqual(payload["icon"], "pill")
+
+        state = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        items = state["attributes"]["items"]
+        icons = [item.get("icon") for item in items]
+        self.assertIn("pill", icons)
+        self.assertIn("person-simple-walk", icons)
+        # An item without an icon must not carry the field at all, so a client
+        # can tell "no icon" from an icon it does not recognise.
+        self.assertIn(None, icons)
+
+    def test_an_item_without_an_icon_omits_the_field(self) -> None:
+        # Absent is not the same as null: an item with no icon must not send one.
+        payload = item_to_attributes(
+            RoutineItem(
+                uid="a", title="Walk", date="2026-09-30", day_part="morning", status="pending"
+            )
+        )
+        self.assertNotIn("icon", payload)
 
     def test_a_decided_item_still_has_a_status_the_card_can_draw(self) -> None:
         # completedAt is only present once an item is decided. The card must not

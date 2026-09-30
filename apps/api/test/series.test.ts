@@ -364,3 +364,114 @@ describe("repeating routines", () => {
     assert.match(missedDay, /SUMMARY:✕/);
   });
 });
+
+describe("removing routine items", () => {
+  let token: string;
+
+  before(async () => {
+    const registered = await api("POST", "/api/auth/register", {
+      body: { email: "removal@example.com", password: "a perfectly good password" },
+    });
+    token = registered.body.token;
+  });
+
+  test("an icon travels with the item it was stored on", async () => {
+    const created = await api("POST", "/api/command", {
+      token,
+      body: {
+        command: "create",
+        item: {
+          uid: "meds@example.com",
+          title: "Take medication",
+          date: "2026-09-30",
+          dayPart: "morning",
+          status: "pending",
+          icon: "pill",
+        },
+      },
+    });
+    assert.equal(created.status, 200);
+    assert.equal(created.body.item.icon, "pill");
+
+    const agenda = await api("GET", "/api/agenda?from=2026-09-30&days=1", { token });
+    assert.equal(agenda.body.items[0].icon, "pill");
+  });
+
+  test("an icon can be changed and cleared", async () => {
+    const changed = await api("POST", "/api/command", {
+      token,
+      body: { command: "update", uid: "meds@example.com", patch: { icon: "hospital" } },
+    });
+    assert.equal(changed.status, 200);
+    assert.equal(changed.body.item.icon, "hospital");
+
+    const cleared = await api("POST", "/api/command", {
+      token,
+      body: { command: "update", uid: "meds@example.com", patch: { icon: null } },
+    });
+    assert.equal(cleared.status, 200);
+    assert.equal(cleared.body.item.icon, undefined);
+    // Clearing the picture must not disturb the routine.
+    assert.equal(cleared.body.item.title, "Take medication");
+  });
+
+  test("an item can be removed", async () => {
+    const removed = await api("POST", "/api/command", {
+      token,
+      body: { command: "delete", uid: "meds@example.com" },
+    });
+    assert.equal(removed.status, 200);
+    const agenda = await api("GET", "/api/agenda?from=2026-09-30&days=1", { token });
+    assert.deepEqual(agenda.body.items, []);
+  });
+
+  test("a repeating day is removed by excluding it, recorded or not", async () => {
+    await api("POST", "/api/command", {
+      token,
+      body: {
+        command: "add_series",
+        series: {
+          uid: "swim@example.com",
+          title: "Swimming",
+          date: "2026-09-30",
+          dayPart: "afternoon",
+          icon: "person-simple-walk",
+          recurrence: { freq: "weekly", byDay: ["WE"] },
+        },
+      },
+    });
+    // One day is recorded, so it exists as a document; the other is only an
+    // expansion. Removing both has to work.
+    await api("POST", "/api/command", {
+      token,
+      body: { command: "complete", uid: "swim@example.com:2026-10-07", completedAt: "2026-10-07T15:00:00Z" },
+    });
+
+    const removedRecorded = await api("POST", "/api/command", {
+      token,
+      body: { command: "delete", uid: "swim@example.com:2026-10-07" },
+    });
+    assert.equal(removedRecorded.status, 200);
+
+    const removedExpansion = await api("POST", "/api/command", {
+      token,
+      body: { command: "delete", uid: "swim@example.com:2026-10-14" },
+    });
+    assert.equal(removedExpansion.status, 200);
+
+    const agenda = await api("GET", "/api/agenda?from=2026-09-30&days=30", { token });
+    const dates = agenda.body.items.map((item: { date: string }) => item.date);
+    // The anchor and the following week stay; the two removed days are gone.
+    assert.deepEqual(dates, ["2026-09-30", "2026-10-21", "2026-10-28"]);
+    // The repeat itself is intact.
+    assert.ok(agenda.body.items.every((item: { routineId?: string }) => item.routineId === "swim@example.com"));
+  });
+
+  test("removing a day that is not there is still a not-found", async () => {
+    const response = await api("POST", "/api/command", {
+      token,
+      body: { command: "delete", uid: "nobody@example.com" },
+    });
+    assert.equal(response.status, 404);
+  });
+});

@@ -160,6 +160,15 @@ create:
         number:
           min: 0
           mode: box
+    icon:
+      name: Icon
+      description: >-
+        Name of a routine icon from the shared set, for example "pill" or
+        "person-simple-walk". The web app and the dashboard card offer a picker;
+        an unknown name is stored but draws nothing.
+      example: "pill"
+      selector:
+        text:
 
 update:
   name: Update routine item
@@ -222,6 +231,15 @@ update:
         number:
           min: 0
           mode: box
+    icon:
+      name: Icon
+      description: >-
+        Name of a routine icon from the shared set, for example "pill" or
+        "person-simple-walk". The web app and the dashboard card offer a picker;
+        an unknown name is stored but draws nothing.
+      example: "pill"
+      selector:
+        text:
     expected_revision:
       name: Expected revision
       selector:
@@ -321,6 +339,15 @@ add_series:
         number:
           min: 0
           mode: box
+    icon:
+      name: Icon
+      description: >-
+        Name of a routine icon from the shared set, for example "pill" or
+        "person-simple-walk". The web app and the dashboard card offer a picker;
+        an unknown name is stored but draws nothing.
+      example: "pill"
+      selector:
+        text:
     exdates:
       name: Excluded dates
       description: Days to leave out, as YYYY-MM-DD. Holidays, appointments.

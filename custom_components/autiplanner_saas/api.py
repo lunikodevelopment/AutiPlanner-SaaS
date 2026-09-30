@@ -110,6 +110,7 @@ class RoutineItem:
     order: int | None = None
     routine_id: str | None = None
     revision: int | None = None
+    icon: str | None = None
 
     @classmethod
     def from_payload(cls, payload: dict[str, Any]) -> RoutineItem:
@@ -136,6 +137,7 @@ class RoutineItem:
             order=_opt_int(payload.get("order")),
             routine_id=_opt_str(payload.get("routineId")),
             revision=_opt_int(payload.get("revision")),
+            icon=_opt_str(payload.get("icon")),
         )
 
     def to_payload(self) -> dict[str, Any]:
@@ -160,6 +162,7 @@ class RoutineItem:
             "order": self.order,
             "routineId": self.routine_id,
             "revision": self.revision,
+            "icon": self.icon,
         }
         for key, value in optional.items():
             if value is not None:
@@ -280,6 +283,7 @@ class RoutineTemplate:
     due: str | None = None
     timezone: str | None = None
     order: int | None = None
+    icon: str | None = None
     exdates: list[str] | None = None
 
     def to_payload(self) -> dict[str, Any]:
@@ -297,6 +301,7 @@ class RoutineTemplate:
             "due": self.due,
             "timezone": self.timezone,
             "order": self.order,
+            "icon": self.icon,
             "exdates": self.exdates,
         }
         for key, value in optional.items():

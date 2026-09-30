@@ -466,6 +466,7 @@ export function itemPayload(item: RoutineItem): Record<string, unknown> {
     order: item.order,
     routineId: item.routineId,
     revision: item.revision,
+    icon: item.icon,
   };
   for (const [key, value] of Object.entries(optional)) {
     if (value !== undefined) payload[key] = value;

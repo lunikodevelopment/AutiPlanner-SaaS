@@ -77,10 +77,10 @@ class FakeClient:
         return await self._record("delete", uid, kwargs)
 
     async def create(self, item, **kwargs):
-        return await self._record("create", item.uid, kwargs)
+        return await self._record("create", item.uid, kwargs, item=item)
 
     async def update(self, uid, patch, **kwargs):
-        return await self._record("update", uid, kwargs)
+        return await self._record("update", uid, kwargs, patch=patch)
 
     async def add_series(self, series, **kwargs):
         return await self._record("add_series", series.uid, kwargs, series=series)
@@ -414,3 +414,54 @@ async def test_removing_a_repeat_is_an_ordinary_delete(
     )
     assert fake_client.commands[-1]["command"] == "delete"
     assert fake_client.commands[-1]["uid"] == "swimming@example"
+
+
+async def test_an_icon_is_sent_with_the_item_and_the_series(
+    hass: HomeAssistant, fake_client: FakeClient
+) -> None:
+    """The picker's choice has to reach the server on both paths."""
+    await _setup(hass)
+    await hass.services.async_call(
+        DOMAIN,
+        "create",
+        {
+            "uid": "meds@example",
+            "title": "Take medication",
+            "date": "2026-09-30",
+            "day_part": "morning",
+            "status": "pending",
+            "icon": "pill",
+            "entity_id": "sensor.routine_agenda",
+        },
+        blocking=True,
+    )
+    assert fake_client.commands[-1]["item"].icon == "pill"
+
+    await hass.services.async_call(
+        DOMAIN,
+        "add_series",
+        {
+            "uid": "swim@example",
+            "title": "Swimming",
+            "date": "2026-09-30",
+            "day_part": "afternoon",
+            "recurrence": {"freq": "weekly", "byDay": ["WE"]},
+            "icon": "person-simple-walk",
+            "entity_id": "sensor.routine_agenda",
+        },
+        blocking=True,
+    )
+    series = fake_client.commands[-1]["series"]
+    assert series.icon == "person-simple-walk"
+    assert series.to_payload()["icon"] == "person-simple-walk"
+
+
+async def test_an_icon_can_be_changed_and_cleared(hass: HomeAssistant, fake_client: FakeClient) -> None:
+    await _setup(hass)
+    await hass.services.async_call(
+        DOMAIN,
+        "update",
+        {"uid": "a", "icon": "hospital", "entity_id": "sensor.routine_agenda"},
+        blocking=True,
+    )
+    assert fake_client.commands[-1]["patch"] == {"icon": "hospital"}

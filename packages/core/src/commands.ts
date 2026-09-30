@@ -5,7 +5,7 @@ import {
   type RoutineStatus,
 } from "./model.js";
 import { validateTemplate, type RecurrenceRule, type RoutineTemplate } from "./recurrence.js";
-import { hasExplicitOffset } from "./time.js";
+import { hasExplicitOffset, isCalendarDate } from "./time.js";
 
 export type CommandErrorCode =
   | "not-found"
@@ -207,6 +207,33 @@ export function addSeries(
 }
 
 /**
+ * Leaves one day out of a series without ending it.
+ *
+ * Removing a day of a repeat cannot delete an item: until something is recorded
+ * against it the day is only an expansion, so there is nothing stored to remove.
+ * The day is added to the series' excluded dates instead, which is what the
+ * expansion already honours.
+ */
+export function excludeOccurrence(
+  series: readonly RoutineTemplate[],
+  uid: string,
+): SeriesMutation | null {
+  for (const template of series) {
+    const prefix = `${template.uid}:`;
+    if (!uid.startsWith(prefix)) continue;
+    const date = uid.slice(prefix.length);
+    if (!isCalendarDate(date) || date < template.date) continue;
+    const exdates = [...new Set([...(template.exdates ?? []), date])].sort();
+    const updated: RoutineTemplate = { ...template, exdates };
+    return {
+      series: series.map((candidate) => (candidate.uid === template.uid ? updated : candidate)),
+      result: { template: updated, changed: true },
+    };
+  }
+  return null;
+}
+
+/**
  * Removes a series and every occurrence that has been recorded against it.
  *
  * Leaving the recorded occurrences behind would turn a deleted repeat into a
@@ -241,6 +268,7 @@ export const commands = {
   delete: deleteItem,
   addSeries,
   deleteSeries,
+  excludeOccurrence,
 } as const;
 
 function applyStatus(
