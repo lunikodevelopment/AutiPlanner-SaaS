@@ -93,6 +93,13 @@ There are three pieces, and they are independent:
   `complete` / `mark_missed` / `skip` / `reset` plus CRUD actions. Install it
   through HACS (add this repository as an **Integration**) or copy the folder.
 
+- **Icons and removal.** A routine can carry an icon from a fixed set drawn from
+  [Phosphor Icons](https://phosphoricons.com) — teeth, medication, meals, the
+  school run, appointments — chosen from a picker in both the web app and the
+  card. The icons are inlined in each client, so there is no icon font and no
+  second HACS plugin to install. Routine items can be removed from either client,
+  and a single day of a repeat can be dropped without ending the repeat.
+
 - **Repeating routines.** A routine can repeat every day or every week on the
   same day and day part, or stay a one-off. The server stores a **rule** and
   expands it for whatever window is read, so nothing about the future is written

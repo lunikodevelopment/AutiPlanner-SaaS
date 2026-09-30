@@ -711,3 +711,17 @@ test("removing one day of a repeat removes that day, not the routine", async () 
     "removing a day must not delete the series",
   );
 });
+
+test("icons can be turned off, for a card that is only words", async () => {
+  const hass = new FakeHass();
+  hass.states[AGENDA] = agendaState([item({ icon: "pill" })]);
+  const card = mount(hass, { show_icons: false });
+
+  assert.equal(card.shadowRoot?.querySelector(".item .icon"), null);
+  // The routine is still fully readable; only the picture is gone.
+  assert.match(text(card), /Eat breakfast/);
+  assert.ok(card.shadowRoot?.querySelector('[data-act="complete"]') !== null);
+  // And the picker is still offered in the form, since that is about adding.
+  click(card, '[data-act="toggle-add"]');
+  assert.ok(card.shadowRoot?.querySelector('[data-act="pick-icon"][data-icon="pill"]') !== null);
+});

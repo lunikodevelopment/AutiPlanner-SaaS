@@ -52,6 +52,7 @@ entity: sensor.routine_agenda
 | Option | Default | Meaning |
 |---|---|---|
 | `entity` | first `*_agenda` sensor | The agenda sensor to draw and to send actions to |
+| `show_icons` | `true` | Draw each routine's icon beside its title |
 | `days` | `1` | How many days to show, starting today (1–7) |
 | `show_add` | `true` | Show the add-item button and its form |
 | `show_summary` | `true` | Show the per-day outcome counts |
@@ -85,6 +86,14 @@ More than one calendar means one card each, pointing at its own sensor.
   every day it falls on, including the ones already recorded. One stray tap on a
   shared dashboard must not undo a routine. Tapping ↻ on a single day and
   recording an outcome there affects only that day.
+- **Remove a routine.** Every row has a remove control, and it asks first for the
+  same reason. Removing a day of a repeat leaves that date out of the rule and
+  keeps the rest; ↻ is what ends the routine.
+- **Icon.** Optional, chosen from a fixed set drawn from
+  [Phosphor Icons](https://phosphoricons.com). The icons are inlined in the card,
+  so there is no icon font to install and no second HACS plugin. The picker shows
+  each icon with the meaning it stands for, and the choice only appears in the
+  picker: it is not a free-text field.
 - **Immediate.** Each action calls the integration, then asks the coordinator to
   poll now, so a change is on screen in about a second rather than at the next
   poll interval. The row updates optimistically first, and the local state is

@@ -60,6 +60,7 @@ interface CardConfig {
   days: number;
   showAdd: boolean;
   showSummary: boolean;
+  showIcons: boolean;
   title: string | null;
 }
 
@@ -83,7 +84,14 @@ const REPEAT_LABEL: Readonly<Record<RepeatChoice, string>> = {
 
 export class AutiPlannerCard extends HTMLElement {
   #root: ShadowRoot;
-  #config: CardConfig = { entity: "", days: 1, showAdd: true, showSummary: true, title: null };
+  #config: CardConfig = {
+    entity: "",
+    days: 1,
+    showAdd: true,
+    showSummary: true,
+    showIcons: true,
+    title: null,
+  };
   #hass: HomeAssistantLike | null = null;
   /** Outcomes applied locally, so a tap feels immediate while the poll catches up. */
   #optimistic = new Map<string, RoutineStatus>();
@@ -136,6 +144,7 @@ export class AutiPlannerCard extends HTMLElement {
       days: Math.min(Math.max(days, 1), MAX_DAYS),
       showAdd: config["show_add"] !== false,
       showSummary: config["show_summary"] !== false,
+      showIcons: config["show_icons"] !== false,
       title: typeof title === "string" && title.trim() !== "" ? title : null,
     };
   }
@@ -260,7 +269,7 @@ export class AutiPlannerCard extends HTMLElement {
         .join("") +
       `<button type="button" class="act remove" data-act="remove-item" data-uid="${escape(item.uid)}"${disabled}
          aria-label="Remove ${escape(item.title)}">&#10005;</button>`;
-    const icon = findRoutineIcon(item.icon);
+    const icon = this.#config.showIcons ? findRoutineIcon(item.icon) : undefined;
     const iconHtml =
       icon === undefined
         ? ""

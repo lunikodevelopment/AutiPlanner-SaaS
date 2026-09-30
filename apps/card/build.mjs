@@ -18,6 +18,11 @@ const options = {
   target: ["es2020"],
   platform: "browser",
   sourcemap: false,
+  // Deliberately not minified. The icons are inlined, which took this from 23 KB
+  // to 64 KB raw, but gzip brings it to 18 KB and minifying saves only another
+  // 2.5 KB on the wire. This file is committed and reviewed in diffs, so the
+  // readable copy is worth more than the bytes.
+  minify: false,
   logLevel: "info",
 };
 

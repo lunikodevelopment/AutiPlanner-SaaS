@@ -445,7 +445,14 @@ var AutiPlannerCard = class extends HTMLElement {
     super();
     __privateAdd(this, _AutiPlannerCard_instances);
     __privateAdd(this, _root);
-    __privateAdd(this, _config, { entity: "", days: 1, showAdd: true, showSummary: true, title: null });
+    __privateAdd(this, _config, {
+      entity: "",
+      days: 1,
+      showAdd: true,
+      showSummary: true,
+      showIcons: true,
+      title: null
+    });
     __privateAdd(this, _hass, null);
     /** Outcomes applied locally, so a tap feels immediate while the poll catches up. */
     __privateAdd(this, _optimistic, /* @__PURE__ */ new Map());
@@ -486,6 +493,7 @@ var AutiPlannerCard = class extends HTMLElement {
       days: Math.min(Math.max(days, 1), MAX_DAYS),
       showAdd: config["show_add"] !== false,
       showSummary: config["show_summary"] !== false,
+      showIcons: config["show_icons"] !== false,
       title: typeof title === "string" && title.trim() !== "" ? title : null
     });
   }
@@ -596,7 +604,7 @@ renderItem_fn = function(item) {
              aria-label="Mark ${escape(item.title)} ${escape(button.word)}">${button.glyph}</button>`
   ).join("") + `<button type="button" class="act remove" data-act="remove-item" data-uid="${escape(item.uid)}"${disabled}
          aria-label="Remove ${escape(item.title)}">&#10005;</button>`;
-  const icon = findRoutineIcon(item.icon);
+  const icon = __privateGet(this, _config).showIcons ? findRoutineIcon(item.icon) : void 0;
   const iconHtml = icon === void 0 ? "" : `<span class="icon" title="${escape(icon.title)}">${routineIconSvg(icon.name, 22)}</span>`;
   const repeat = item.routineId === void 0 ? "" : `<button type="button" class="repeat" data-act="stop-repeat" data-series="${escape(item.routineId)}"
              aria-label="Stop repeating ${escape(item.title)}">&#8635;</button>`;

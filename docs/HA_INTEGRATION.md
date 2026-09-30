@@ -193,6 +193,15 @@ A `start` or `due` with no offset is a floating local time: it is the
 household's own clock, and travels correctly across a timezone change. Add
 `timezone` only if the item really belongs to a named zone.
 
+`create`, `update`, and `add_series` also take an optional `icon`, naming a
+picture from the shared set: `pill`, `tooth`, `bowl-steam`, `washing-machine`,
+`calendar-check` and so on. The set is the same one the web app and the card
+offer in their pickers, and it is in
+[`packages/icons`](https://github.com/lunikodevelopment/AutiPlanner-SaaS/tree/main/packages/icons).
+A name that is not in the set is stored and simply draws nothing, so a typo
+costs a picture rather than the routine. Set `icon` to null in an `update` to
+take one off again.
+
 ### Repeating routines
 
 `add_series` stores a **rule**. Its occurrences are expanded for whatever window
@@ -233,6 +242,11 @@ Remove the whole repeat by passing the series uid to `delete`. Every day it
 falls on goes with it, including the ones already recorded, so a deleted repeat
 does not leave a scatter of one-off items behind. `exdates` leaves individual
 days out without ending the series.
+
+`delete` on an **occurrence** uid, `swimming@example:2026-10-07`, leaves that one
+day out and keeps the repeat. That works whether or not anything was recorded
+against the day, since the day is part of the rule rather than an item, and it is
+what the dashboard card and the web app use when a single day is removed.
 
 ## Options
 
