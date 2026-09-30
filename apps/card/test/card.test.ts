@@ -292,6 +292,76 @@ test("card titles are escaped rather than injected", () => {
   assert.match(text(card), /<img src=x onerror=alert\(1\)>/);
 });
 
+test("the date is optional and an empty one means today", async () => {
+  const hass = new FakeHass();
+  hass.states[AGENDA] = agendaState([]);
+  const card = mount(hass);
+
+  click(card, '[data-act="toggle-add"]');
+  const form = card.shadowRoot?.querySelector<HTMLFormElement>("form[data-form]");
+  assert.ok(form !== null && form !== undefined, "the add form should open");
+
+  (card.shadowRoot?.querySelector("#ap-title") as HTMLInputElement).value = "Brush teeth";
+  // Cleared, not filled in: the household is adding something for now.
+  const date = card.shadowRoot?.querySelector("#ap-date") as HTMLInputElement;
+  assert.equal(date.required, false, "the date must not be a required field");
+  date.value = "";
+
+  form.dispatchEvent(new (dom.window.Event)("submit", { bubbles: true, cancelable: true }));
+  await settle();
+
+  const call = hass.calls.find((candidate) => candidate.service === "create");
+  assert.ok(call !== undefined, "expected a create call");
+  assert.equal(call.data["date"], localToday("UTC"));
+});
+
+test("a time without a date still lands on today", async () => {
+  const hass = new FakeHass();
+  hass.states[AGENDA] = agendaState([]);
+  const card = mount(hass);
+
+  click(card, '[data-act="toggle-add"]');
+  const form = card.shadowRoot?.querySelector<HTMLFormElement>("form[data-form]");
+  assert.ok(form !== null && form !== undefined);
+
+  (card.shadowRoot?.querySelector("#ap-title") as HTMLInputElement).value = "Stand up";
+  (card.shadowRoot?.querySelector("#ap-date") as HTMLInputElement).value = "";
+  (card.shadowRoot?.querySelector("#ap-time") as HTMLInputElement).value = "07:45";
+
+  form.dispatchEvent(new (dom.window.Event)("submit", { bubbles: true, cancelable: true }));
+  await settle();
+
+  const call = hass.calls.find((candidate) => candidate.service === "create");
+  assert.ok(call !== undefined);
+  // A time with no date must not become a timestamp with an empty date, which
+  // the API rejects.
+  assert.equal(call.data["start"], `${localToday("UTC")}T07:45:00`);
+});
+
+test("a day that does not exist is discarded by the field, so the item lands on today", async () => {
+  const hass = new FakeHass();
+  hass.states[AGENDA] = agendaState([]);
+  const card = mount(hass);
+
+  click(card, '[data-act="toggle-add"]');
+  const form = card.shadowRoot?.querySelector<HTMLFormElement>("form[data-form]");
+  assert.ok(form !== null && form !== undefined);
+
+  (card.shadowRoot?.querySelector("#ap-title") as HTMLInputElement).value = "Impossible";
+  const date = card.shadowRoot?.querySelector("#ap-date") as HTMLInputElement;
+  date.value = "2026-02-31";
+  // The browser empties a day that does not exist rather than handing the card
+  // a broken value, which is why this is today rather than a rejection.
+  assert.equal(date.value, "");
+
+  form.dispatchEvent(new (dom.window.Event)("submit", { bubbles: true, cancelable: true }));
+  await settle();
+
+  const call = hass.calls.find((candidate) => candidate.service === "create");
+  assert.ok(call !== undefined, "the item is still added");
+  assert.equal(call.data["date"], localToday("UTC"));
+});
+
 test("helpers", () => {
   assert.deepEqual(
     actionsFor("pending").map((button) => button.action),

@@ -7,6 +7,21 @@ var __privateAdd = (obj, member, value) => member.has(obj) ? __typeError("Cannot
 var __privateSet = (obj, member, value, setter) => (__accessCheck(obj, member, "write to private field"), setter ? setter.call(obj, value) : member.set(obj, value), value);
 var __privateMethod = (obj, member, method) => (__accessCheck(obj, member, "access private method"), method);
 
+// ../../packages/core/src/time.ts
+var DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+function isCalendarDate(value) {
+  const match = DATE_PATTERN.exec(value);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) {
+    return false;
+  }
+  const utc = new Date(Date.UTC(year, month - 1, day));
+  return utc.getUTCFullYear() === year && utc.getUTCMonth() === month - 1 && utc.getUTCDate() === day;
+}
+
 // ../../packages/core/src/model.ts
 var DAY_PARTS = ["morning", "afternoon", "evening", "night"];
 
@@ -211,8 +226,8 @@ renderEditor_fn = function(today) {
       <input id="ap-title" name="title" value="${escape(draft.title)}" required maxlength="120" placeholder="Take medication" />
       <div class="grid">
         <div>
-          <label for="ap-date">Date</label>
-          <input id="ap-date" name="date" type="date" value="${escape(date)}" required />
+          <label for="ap-date">Date <span class="hint">(today if left empty)</span></label>
+          <input id="ap-date" name="date" type="date" value="${escape(date)}" />
         </div>
         <div>
           <label for="ap-part">Day part</label>
@@ -278,11 +293,18 @@ act_fn = async function(uid, button) {
 create_fn = async function(form) {
   const data = new FormData(form);
   const title = String(data.get("title") ?? "").trim();
-  const date = String(data.get("date") ?? "").trim();
+  const chosen = String(data.get("date") ?? "").trim();
   const dayPart = String(data.get("dayPart") ?? "morning");
   const time = String(data.get("time") ?? "").trim();
-  if (title === "" || !isDayPart(dayPart) || date === "") {
-    __privateSet(this, _message, "A title, a date and a day part are required.");
+  if (title === "" || !isDayPart(dayPart)) {
+    __privateSet(this, _message, "A title and a day part are required.");
+    __privateSet(this, _messageIsError, true);
+    __privateMethod(this, _AutiPlannerCard_instances, render_fn).call(this);
+    return;
+  }
+  const date = chosen === "" ? localToday(__privateGet(this, _hass)?.config.time_zone) : chosen;
+  if (!isCalendarDate(date)) {
+    __privateSet(this, _message, "That date is not a real day.");
     __privateSet(this, _messageIsError, true);
     __privateMethod(this, _AutiPlannerCard_instances, render_fn).call(this);
     return;
@@ -485,6 +507,7 @@ var STYLES = `
   .message.error, .notice.warn { background: var(--error-color, #db4437); color: #fff; }
   .add { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
   .add label { font-size: 0.78rem; color: var(--secondary-text-color, #727272); }
+  .add .hint { font-weight: 400; opacity: 0.75; }
   .add input, .add select { width: 100%; box-sizing: border-box; padding: 8px;
       border-radius: 8px; border: 1px solid var(--divider-color, #e0e0e0);
       background: var(--card-background-color, #fff); color: var(--primary-text-color, #212121);

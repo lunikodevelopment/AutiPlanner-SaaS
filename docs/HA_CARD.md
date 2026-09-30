@@ -71,9 +71,11 @@ More than one calendar means one card each, pointing at its own sensor.
 - **Outcomes.** A pending item offers ✓ completed, ✕ missed, and — skipped. A
   decided item offers only ↺ back to pending, because the four states are
   mutually exclusive and there is no "complete a missed item".
-- **Add an item.** Title, date, day part, and an optional time. A time is stored
-  as a floating local clock, so it follows the household's own timezone rather
-  than the server's.
+- **Add an item.** Title, day part, and optionally a date and a time. The date
+  is optional and an empty one means **today**, which is where the web app puts
+  an item too: it adds to the day you are looking at rather than asking. A time
+  is stored as a floating local clock, so it follows the household's own timezone
+  rather than the server's.
 - **Immediate.** Each action calls the integration, then asks the coordinator to
   poll now, so a change is on screen in about a second rather than at the next
   poll interval. The row updates optimistically first, and the local state is

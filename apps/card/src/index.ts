@@ -16,6 +16,7 @@ import {
   STATUS_ACCESSIBLE_LABEL,
   STATUS_SYMBOL,
   formatClock,
+  isCalendarDate,
   type DayPart,
   type RoutineItem,
   type RoutineStatus,
@@ -251,8 +252,8 @@ export class AutiPlannerCard extends HTMLElement {
       <input id="ap-title" name="title" value="${escape(draft.title)}" required maxlength="120" placeholder="Take medication" />
       <div class="grid">
         <div>
-          <label for="ap-date">Date</label>
-          <input id="ap-date" name="date" type="date" value="${escape(date)}" required />
+          <label for="ap-date">Date <span class="hint">(today if left empty)</span></label>
+          <input id="ap-date" name="date" type="date" value="${escape(date)}" />
         </div>
         <div>
           <label for="ap-part">Day part</label>
@@ -323,12 +324,29 @@ export class AutiPlannerCard extends HTMLElement {
   async #create(form: HTMLFormElement): Promise<void> {
     const data = new FormData(form);
     const title = String(data.get("title") ?? "").trim();
-    const date = String(data.get("date") ?? "").trim();
+    const chosen = String(data.get("date") ?? "").trim();
     const dayPart = String(data.get("dayPart") ?? "morning");
     const time = String(data.get("time") ?? "").trim();
 
-    if (title === "" || !isDayPart(dayPart) || date === "") {
-      this.#message = "A title, a date and a day part are required.";
+    if (title === "" || !isDayPart(dayPart)) {
+      this.#message = "A title and a day part are required.";
+      this.#messageIsError = true;
+      this.#render();
+      return;
+    }
+
+    // The date is optional in the form and defaults to today, the way the web
+    // app adds to the day you are looking at. An item still carries a date: the
+    // domain rejects an item without one.
+    //
+    // A native date field cannot hold a day that does not exist; it empties
+    // itself instead, so a mistyped 31 February is indistinguishable here from
+    // clearing the field and both land on today, which is what the field already
+    // showed. The check below is a backstop for a value that came from
+    // somewhere other than the field.
+    const date = chosen === "" ? localToday(this.#hass?.config.time_zone) : chosen;
+    if (!isCalendarDate(date)) {
+      this.#message = "That date is not a real day.";
       this.#messageIsError = true;
       this.#render();
       return;
@@ -571,6 +589,7 @@ const STYLES = `
   .message.error, .notice.warn { background: var(--error-color, #db4437); color: #fff; }
   .add { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
   .add label { font-size: 0.78rem; color: var(--secondary-text-color, #727272); }
+  .add .hint { font-weight: 400; opacity: 0.75; }
   .add input, .add select { width: 100%; box-sizing: border-box; padding: 8px;
       border-radius: 8px; border: 1px solid var(--divider-color, #e0e0e0);
       background: var(--card-background-color, #fff); color: var(--primary-text-color, #212121);

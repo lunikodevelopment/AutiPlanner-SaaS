@@ -27,6 +27,9 @@ The card needs the **AutiPlanner (hosted)** integration to be installed and set
 up, because it draws that integration's agenda sensor and acts through its
 actions. It holds no AutiPlanner credential of its own.
 
+Adding an item needs only a title and a day part: the date is optional and
+defaults to today, and a time is optional too.
+
 | Option | Default | Meaning |
 |---|---|---|
 | `entity` | first `*_agenda` sensor | The agenda sensor to draw and send actions to |
