@@ -2,6 +2,7 @@ import {
   formatAgenda,
   markMissed,
   type RoutineItem,
+  type RoutineTemplate,
 } from "@autiplanner/core";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
