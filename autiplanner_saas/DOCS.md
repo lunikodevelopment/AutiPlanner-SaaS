@@ -9,11 +9,21 @@ includes in Home Assistant backups.
 
 ## Install
 
-1. In Home Assistant, open **Settings → Apps → Install app**.
+Add this repository as an app repository, install the app, and **start it**:
+
+[![Open your Home Assistant instance and show the app repository dialog with this repository pre-filled.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Flunikodevelopment%2FAutiPlanner-SaaS)
+
+1. In Home Assistant, open **Settings → Apps**.
 2. On the **⋮** menu choose **Repositories**, add
    `https://github.com/lunikodevelopment/AutiPlanner-SaaS`, and close.
-3. Install **AutiPlanner (hosted)** and start it.
-4. Open it from the sidebar or from the address on the app's **Info** tab.
+3. Install **AutiPlanner (hosted)**.
+4. **Press Start.** The app stays stopped after it is installed; it does not run
+   by itself, and it only starts automatically at the next Home Assistant boot.
+5. Open it from the sidebar or from the address on the app's **Info** tab.
+
+Installing the AutiPlanner integration through HACS does not install or start
+this app. HACS installs the integration only; the app is a separate step, and an
+integration cannot start an app for you.
 
 The app needs the published image, `ghcr.io/lunikodevelopment/autiplanner-saas`.
 That container package must be public; if the install fails with a pull error,

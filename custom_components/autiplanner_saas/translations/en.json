@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "AutiPlanner (hosted)",
-        "description": "Connect to an AutiPlanner server. The default address is the app's, if you installed it on this Home Assistant.",
+        "description": "Connect to an AutiPlanner server. On Home Assistant OS, install the AutiPlanner (hosted) app from Settings > Apps and press Start first, because HACS installs only this integration, not the server. The default address is the app's.",
         "menu_options": {
           "sign_in": "Sign in to an existing account",
           "register": "Create a new account"
@@ -83,6 +83,12 @@
           "calendar_id": "Switch to another of your calendars."
         }
       }
+    }
+  },
+  "issues": {
+    "server_unreachable": {
+      "title": "AutiPlanner server is unreachable",
+      "description": "Home Assistant cannot reach the AutiPlanner server at {url}. If you run it as a Home Assistant app, open Settings > Apps, install **AutiPlanner (hosted)** if it is not already there, and press **Start**. Installing the integration through HACS does not install or start the app. If you run the server elsewhere, check that it is running and that the address is correct."
     }
   }
 }

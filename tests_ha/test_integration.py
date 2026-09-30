@@ -19,6 +19,7 @@ from custom_components.autiplanner_saas.api import (
     Agenda,
     AutiPlannerAuthError,
     AutiPlannerConflictError,
+    AutiPlannerConnectionError,
     Calendar,
     RoutineItem,
     Session,
@@ -42,6 +43,7 @@ class FakeClient:
     """A stand-in for AutiPlannerClient that records what it was asked to do."""
 
     def __init__(self, *args, **kwargs) -> None:
+        self.base_url = "http://example.test"
         self.agenda_calls: list[tuple[str, int, str | None]] = []
         self.commands: list[dict] = []
         self.agenda_result = Agenda(items=(_item("a", "pending"),), revision=3, issues=())
@@ -281,3 +283,45 @@ async def test_config_flow_reports_bad_credentials(
     result = await _sign_in(hass, config_client)
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"base": "invalid_auth"}
+
+
+async def test_a_reachable_server_leaves_no_repair(
+    hass: HomeAssistant, fake_client: FakeClient
+) -> None:
+    from homeassistant.helpers import issue_registry as ir
+
+    await _setup(hass)
+    issues = ir.async_get(hass).issues
+    assert not any(
+        domain == DOMAIN and issue_id.startswith("server_unreachable_")
+        for domain, issue_id in issues
+    )
+
+
+async def test_an_unreachable_server_raises_a_repair(
+    hass: HomeAssistant, fake_client: FakeClient
+) -> None:
+    """A stopped or missing app must be visible, not silently stale."""
+    from homeassistant.helpers import issue_registry as ir
+
+    fake_client.agenda_error = AutiPlannerConnectionError(0, "cannot_connect", "refused")
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "base_url": "http://example.test",
+            "email": "home@example.com",
+            "token": "secret",
+            "account_id": "acct",
+            "calendar_id": "cal-1",
+            "calendar_name": "Routine",
+        },
+    )
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    issues = ir.async_get(hass).issues
+    assert any(
+        domain == DOMAIN and issue_id.startswith("server_unreachable_")
+        for domain, issue_id in issues
+    ), issues

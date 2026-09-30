@@ -33,12 +33,34 @@ cp -r custom_components/autiplanner_saas /config/custom_components/autiplanner_s
 The result must be
 `/config/custom_components/autiplanner_saas/manifest.json`.
 
+> **HACS installs only this integration, not the server.** A custom integration
+> is Python code inside Home Assistant; it cannot install or start a container.
+> The server is a separate Home Assistant **app** that you install and start
+> yourself, as below.
+
 ## Run the server
 
-Either run the server somewhere of your own (see the repository README), or
-install the companion Home Assistant app, which runs it on your Home Assistant
-box. The app is the easiest option; see
-[`../autiplanner_saas/DOCS.md`](../autiplanner_saas/DOCS.md).
+The integration is a client. A server must be running before you add it.
+
+### On Home Assistant OS (the app)
+
+Add this repository as an app repository, install the app, and **start it**:
+
+[![Open your Home Assistant instance and show the app repository dialog with this repository pre-filled.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Flunikodevelopment%2FAutiPlanner-SaaS)
+
+1. **Settings → Apps → ⋮ → Repositories**, add
+   `https://github.com/lunikodevelopment/AutiPlanner-SaaS`.
+2. Install **AutiPlanner (hosted)**.
+3. **Press Start.** A newly installed app stays stopped; it does not run by
+   itself, and it only starts automatically at the next Home Assistant boot.
+
+If the app is missing or stopped, the integration raises a **repair** that says
+so, rather than leaving entities quietly stale.
+
+### Anywhere else
+
+Run the container with Docker (see the repository README) and point the
+integration at its address.
 
 ## Add the integration
 
@@ -156,6 +178,20 @@ data:
 
 The server can revoke a token. Home Assistant notices on the next poll and asks
 for the password again; the entities keep their last known state until then.
+
+## Troubleshooting
+
+**I installed it through HACS and nothing runs.** HACS installs the integration
+only, and it cannot start a container. Install and **start** the app, or run the
+server elsewhere, then add the integration.
+
+**The integration says "Could not reach the server".** The server is not
+running, or the address is wrong. If you use the app, open **Settings → Apps →
+AutiPlanner (hosted)** and press **Start**; if it stops straight away, check its
+log.
+
+**A repair says the server is unreachable.** The same cause. The repair clears
+itself once a poll succeeds.
 
 ## Known limits
 

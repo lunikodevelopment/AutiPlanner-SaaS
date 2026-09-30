@@ -58,3 +58,6 @@ OUTCOMES = ["pending", "completed", "missed", "skipped"]
 DAY_PARTS = ["morning", "afternoon", "evening", "night"]
 
 MANUFACTURER = "AutiPlanner"
+
+#: Where the setup guide lives, used on the repair issue.
+DOCS_URL = "https://github.com/lunikodevelopment/AutiPlanner-SaaS/blob/main/docs/HA_INTEGRATION.md"

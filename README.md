@@ -69,13 +69,24 @@ undid itself the moment the network returned.
 There are two pieces, and they are independent:
 
 - **The app** (`autiplanner_saas/`) runs this server on Home Assistant OS. Add
-  `https://github.com/lunikodevelopment/AutiPlanner-SaaS` as an app repository
-  and install **AutiPlanner (hosted)**. It needs the published image
+  `https://github.com/lunikodevelopment/AutiPlanner-SaaS` as an app repository,
+  install **AutiPlanner (hosted)**, and **press Start** — a newly installed app
+  stays stopped. It needs the published image
   `ghcr.io/lunikodevelopment/autiplanner-saas`; see [the app notes](autiplanner_saas/DOCS.md).
+
+  [![Open your Home Assistant instance and show the app repository dialog with this repository pre-filled.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Flunikodevelopment%2FAutiPlanner-SaaS)
+
 - **The integration** (`custom_components/autiplanner_saas`) connects Home
   Assistant to the API: a calendar entity, agenda sensors, and
   `complete` / `mark_missed` / `skip` / `reset` plus CRUD actions. Install it
   through HACS (add this repository as an **Integration**) or copy the folder.
+
+> Installing the integration through HACS does **not** install or start the app.
+> HACS installs Python code only, and an integration cannot start a container.
+> The app is a separate install and start.
+
+If the server is missing or stopped, the integration raises a **repair** that
+explains both steps, rather than leaving entities quietly stale.
 
 The integration is a client. It never owns a calendar file; the API is the single
 writer. The same four-state outcome and day part are preserved end to end. Full
