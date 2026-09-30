@@ -42,8 +42,9 @@ docker run -d -p 8080:8080 -v autiplanner-data:/data \
   ghcr.io/lunikodevelopment/autiplanner-saas:latest
 ```
 
-The package inherits the repository's visibility, so from a private repository
-the image is private too: authenticate with a token that has `read:packages`.
+The image is public, so it can be pulled anonymously. If you fork this
+repository and keep the fork private, the package stays private too: authenticate
+with a token that has `read:packages`, or make the package public.
 
 ## Offline behaviour
 
