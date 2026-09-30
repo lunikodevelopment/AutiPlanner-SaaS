@@ -1,0 +1,42 @@
+{
+  "state": 4,
+  "attributes": {
+    "items": [
+      {
+        "uid": "medication-20260930@example",
+        "title": "Take morning medication",
+        "date": "2026-09-30",
+        "dayPart": "morning",
+        "status": "pending",
+        "start": "2026-09-30T08:30:00"
+      },
+      {
+        "uid": "walk-20260930@example",
+        "title": "Evening walk",
+        "date": "2026-09-30",
+        "dayPart": "evening",
+        "status": "completed",
+        "start": "2026-09-30T18:00:00",
+        "completedAt": "2026-09-30T18:10:00"
+      },
+      {
+        "uid": "breathing-20260930@example",
+        "title": "Breathing exercise",
+        "date": "2026-09-30",
+        "dayPart": "afternoon",
+        "status": "missed"
+      },
+      {
+        "uid": "bath-20260930@example",
+        "title": "Bath time",
+        "date": "2026-09-30",
+        "dayPart": "night",
+        "status": "skipped"
+      }
+    ],
+    "window_start": "2026-09-16",
+    "window_end": "2026-10-14",
+    "revision": 12,
+    "autiplanner_issues": []
+  }
+}
