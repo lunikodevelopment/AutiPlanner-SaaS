@@ -194,6 +194,12 @@ jobs:
           push: true
           platforms: linux/${{ matrix.arch }}
           tags: ghcr.io/lunikodevelopment/autiplanner-saas:build-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}
+          # Without this each staging tag is an index of the platform manifest
+          # plus a provenance attestation, so joining two of them assembles a
+          # nested index and the finished tag carries two unknown/unknown
+          # entries. Supervisor pulls one image per architecture and has no use
+          # for an attestation, so the manifest is kept to exactly two platforms.
+          provenance: false
           # Stamped into the io.hass.version label so the image identifies itself
           # as the same version as the tag Supervisor pulls.
           build-args: |
@@ -279,14 +285,58 @@ jobs:
             exit 1
           fi
           echo "Joining the per-architecture builds into:$tags"
+          # Echoed before the join, so a failure says what it was given rather
+          # than only that it failed.
+          for arch in amd64 arm64; do
+            ref="ghcr.io/lunikodevelopment/autiplanner-saas:build-${{ github.run_id }}-${{ github.run_attempt }}-$arch"
+            echo "--- $ref"
+            docker buildx imagetools inspect "$ref" | grep -E "MediaType|Digest|Platform" || true
+          done
           # shellcheck disable=SC2086
           docker buildx imagetools create $tags "ghcr.io/lunikodevelopment/autiplanner-saas:build-${{ github.run_id }}-${{ github.run_attempt }}-amd64" "ghcr.io/lunikodevelopment/autiplanner-saas:build-${{ github.run_id }}-${{ github.run_attempt }}-arm64"
 
+      # Checked before the staging tags are removed, so a failure leaves the
+      # evidence in the registry to look at.
+      - name: The manifest carries both architectures
+        run: |
+          set -uo pipefail
+          failed=no
+          for tag in ${{ steps.meta.outputs.tags }}; do
+            # Captured rather than piped: under pipefail a `grep -q` that exits on
+            # the first match kills the writer with SIGPIPE and the pipeline
+            # fails even though the match succeeded.
+            if ! platforms=$(docker buildx imagetools inspect "$tag" 2>&1); then
+              echo "ERROR: could not inspect $tag"
+              echo "$platforms"
+              failed=yes
+              continue
+            fi
+            for arch in amd64 arm64; do
+              case "$platforms" in
+                *"$arch"*) echo "$tag carries $arch" ;;
+                *) echo "ERROR: $tag is missing $arch"; failed=yes ;;
+              esac
+            done
+          done
+          if [ "$failed" = "yes" ]; then
+            exit 1
+          fi
+          {
+            echo "### Published image"
+            echo
+            echo "| Tag | Architectures |"
+            echo "|---|---|"
+            for tag in ${{ steps.meta.outputs.tags }}; do
+              echo "| \`$tag\` | linux/amd64, linux/arm64 |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
       # Publish runs on every push to main, so the staging tags would pile up in
-      # the registry forever. Best effort: a registry that refuses the delete must
-      # not fail a release that is already published.
+      # the registry forever. Best effort, and only once the manifest is known to
+      # be good: a registry that refuses the delete must not fail a release that
+      # is already published, and a failed release must stay debuggable.
       - name: Remove the staging tags
-        if: always()
+        if: success()
         run: |
           for arch in amd64 arm64; do
             ref="ghcr.io/lunikodevelopment/autiplanner-saas:build-${{ github.run_id }}-${{ github.run_attempt }}-$arch"
@@ -299,25 +349,3 @@ jobs:
             fi
           done
 
-      - name: The manifest carries both architectures
-        run: |
-          set -euo pipefail
-          for arch in amd64 arm64; do
-            for tag in ${{ steps.meta.outputs.tags }}; do
-              if docker buildx imagetools inspect "$tag" | grep -q "$arch"; then
-                echo "$tag carries $arch"
-              else
-                echo "ERROR: $tag is missing $arch"
-                exit 1
-              fi
-            done
-          done
-          cat <<'EOF' >> "$GITHUB_STEP_SUMMARY"
-          ### Published image
-
-          | Tag | Architectures |
-          |---|---|
-          EOF
-          for tag in ${{ steps.meta.outputs.tags }}; do
-            echo "| \`$tag\` | linux/amd64, linux/arm64 |" >> "$GITHUB_STEP_SUMMARY"
-          done
