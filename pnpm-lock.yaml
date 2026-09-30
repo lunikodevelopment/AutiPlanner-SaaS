@@ -27,6 +27,22 @@ importers:
         specifier: workspace:*
         version: link:../../packages/ics
 
+  apps/card:
+    dependencies:
+      '@autiplanner/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+    devDependencies:
+      '@types/jsdom':
+        specifier: ^30.0.0
+        version: 30.0.0
+      esbuild:
+        specifier: ^0.28.2
+        version: 0.28.2
+      jsdom:
+        specifier: ^30.1.1
+        version: 30.1.1
+
   apps/web:
     dependencies:
       '@autiplanner/core':

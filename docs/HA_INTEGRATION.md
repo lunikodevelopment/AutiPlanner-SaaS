@@ -92,6 +92,11 @@ full list. Each entry carries a `dayPart` and one of the four `status` values.
 The `calendar.routine` entity also exposes the read-only subscription URL as
 `feed_url` (see below).
 
+To work through the routine from a dashboard rather than the web app, install
+the card that ships in this same repository: see
+[`HA_CARD.md`](HA_CARD.md). It reads the agenda sensor and acts through the
+actions below.
+
 ## Subscribe in Google Calendar or Apple Calendar
 
 The server publishes a read-only `.ics` feed per calendar.
@@ -165,6 +170,27 @@ data:
   uid: "exercise-20260811@example"
   expected_revision: 12
 ```
+
+`create` takes the core contract in snake_case: `uid`, `title`, `date`,
+`day_part`, and optionally `status`, `start`, `due`, `description`, `timezone`,
+`order`. `uid` is required and must be unique in the calendar, so derive it
+rather than counting.
+
+```yaml
+action: autiplanner_saas.create
+target:
+  entity_id: sensor.routine_agenda
+data:
+  uid: "medication-20260930@example"
+  title: "Take morning medication"
+  date: "2026-09-30"
+  day_part: morning
+  start: "2026-09-30T08:30:00"
+```
+
+A `start` or `due` with no offset is a floating local time: it is the
+household's own clock, and travels correctly across a timezone change. Add
+`timezone` only if the item really belongs to a named zone.
 
 ## Options
 

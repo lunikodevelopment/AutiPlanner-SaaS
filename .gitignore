@@ -4,6 +4,9 @@ node_modules/
 /apps/web/dist/
 *.tsbuildinfo
 .pnpm-store/
+# The dashboard card bundle is build output that is deliberately committed: HACS
+# serves it to Home Assistant straight from this repository.
+!/autiplanner-card.js
 
 # Runtime data. Anchored to the repository root on purpose: an unanchored
 # `data/` matches a directory named `data` at any depth and silently excludes

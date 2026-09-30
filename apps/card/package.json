@@ -1,10 +1,10 @@
 {
-  "name": "@autiplanner/web",
+  "name": "@autiplanner/card",
   "version": "0.1.5",
   "private": true,
   "type": "module",
   "license": "MIT",
-  "description": "AutiPlanner PWA with offline-first routine editing.",
+  "description": "AutiPlanner dashboard card for Home Assistant: view, change outcomes, and add routine items.",
   "scripts": {
     "build": "node ./build.mjs",
     "dev": "node ./build.mjs --watch",

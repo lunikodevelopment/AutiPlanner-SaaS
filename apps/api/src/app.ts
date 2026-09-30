@@ -117,7 +117,7 @@ export function createApp(dependencies: AppDependencies): http.RequestListener {
     }
 
     if (pathname === "/api/health" && method === "GET") {
-      sendJson(response, 200, { status: "ok", version: "0.1.4" });
+      sendJson(response, 200, { status: "ok", version: "0.1.5" });
       return;
     }
 

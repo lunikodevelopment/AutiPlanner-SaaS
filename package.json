@@ -1,7 +1,7 @@
 {
   "name": "autiplanner-saas",
   "private": true,
-  "version": "0.1.4",
+  "version": "0.1.5",
   "license": "MIT",
   "description": "Hosted AutiPlanner: a multi-tenant API and an offline-capable PWA.",
   "packageManager": "pnpm@11.0.0",
@@ -11,7 +11,7 @@
   "scripts": {
     "typecheck": "corepack pnpm -r --filter \"./packages/*\" --filter \"./apps/*\" typecheck",
     "test": "corepack pnpm -r --filter \"./packages/*\" --filter \"./apps/*\" test",
-    "build": "corepack pnpm --filter \"./apps/web\" build",
+    "build": "corepack pnpm --filter \"./apps/web\" build && corepack pnpm --filter \"./apps/card\" build",
     "dev": "corepack pnpm --filter \"./apps/web\" build && corepack pnpm --filter \"./apps/api\" dev",
     "start": "corepack pnpm --filter \"./apps/api\" start"
   },

@@ -78,7 +78,7 @@ undid itself the moment the network returned.
 
 ## Home Assistant
 
-There are two pieces, and they are independent:
+There are three pieces, and they are independent:
 
 - **The app** (`autiplanner_saas/`) runs this server on Home Assistant OS. Add
   `https://github.com/lunikodevelopment/AutiPlanner-SaaS` as an app repository,
@@ -92,6 +92,12 @@ There are two pieces, and they are independent:
   Assistant to the API: a calendar entity, agenda sensors, and
   `complete` / `mark_missed` / `skip` / `reset` plus CRUD actions. Install it
   through HACS (add this repository as an **Integration**) or copy the folder.
+
+- **The card** (`autiplanner-card.js`) is a Lovelace card for the routine: change
+  an item's outcome or add a new one from the dashboard. Add this same
+  repository to HACS a second time, with the category **Dashboard**. It draws
+  the integration's agenda sensor and acts through its actions, so it holds no
+  credential of its own. Guide: [`docs/HA_CARD.md`](docs/HA_CARD.md).
 
 > Installing the integration through HACS does **not** install or start the app.
 > HACS installs Python code only, and an integration cannot start a container.
@@ -142,9 +148,11 @@ a one-minute update inside Home Assistant, use the integration's poll interval.
 ```
 apps/api     Node HTTP API, accounts, calendars, and the command endpoint
 apps/web     The PWA. TypeScript bundled with esbuild, no framework.
+apps/card    The Lovelace card. Same build, no framework, no credential.
 packages/    Domain contracts and the iCalendar profile, shared with AutiPlanner
 custom_components/autiplanner_saas  Home Assistant integration (a client of this API)
 autiplanner_saas/                   Home Assistant app that runs this server
+autiplanner-card.js                 Built card, served to HACS from the repository
 ```
 
 There is no database. State is files:
