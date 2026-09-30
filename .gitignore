@@ -1,0 +1,24 @@
+# Dependencies and build output
+node_modules/
+/dist/
+/apps/web/dist/
+*.tsbuildinfo
+.pnpm-store/
+
+# Runtime data. Anchored to the repository root on purpose: an unanchored
+# `data/` matches a directory named `data` at any depth and silently excludes
+# source files from the repository.
+/data/
+/data-test/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store

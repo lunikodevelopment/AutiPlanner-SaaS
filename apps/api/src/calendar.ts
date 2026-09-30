@@ -1,0 +1,321 @@
+import {
+  complete,
+  create,
+  deleteItem,
+  expandSeries,
+  isCalendarDate,
+  markMissed,
+  reset,
+  RoutineCommandError,
+  skip,
+  update,
+  type RoutineItem,
+  type RoutineItemPatch,
+  type RoutineStatus,
+  type RoutineTemplate,
+} from "@autiplanner/core";
+import { parseCalendar, serializeCalendar, type IcsIssue } from "@autiplanner/ics";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { ApiError, badRequest, conflict, notFound } from "./errors.js";
+import { Mutex, writeFileAtomic } from "./storage.js";
+
+export interface CalendarMeta {
+  /** Monotonic counter across every change to this calendar. */
+  revision: number;
+  updatedAt: string;
+  /**
+   * Idempotency keys already applied. An offline client may retry a command it
+   * never saw acknowledged; the key stops it being applied twice.
+   */
+  appliedCommands: string[];
+}
+
+/** Bounds the idempotency ledger so it cannot grow without limit. */
+const MAX_APPLIED_COMMANDS = 500;
+
+export interface AgendaResult {
+  readonly items: readonly RoutineItem[];
+  readonly revision: number;
+}
+
+export type CommandName =
+  | "complete"
+  | "mark_missed"
+  | "skip"
+  | "reset"
+  | "create"
+  | "update"
+  | "delete";
+
+export interface CommandInput {
+  readonly command: CommandName;
+  readonly uid?: string;
+  readonly completedAt?: string;
+  readonly expectedRevision?: number;
+  /** A stable key supplied by the client so a retry is not applied twice. */
+  readonly clientCommandId?: string;
+  readonly item?: RoutineItem;
+  readonly patch?: RoutineItemPatch;
+}
+
+export interface CommandOutcome {
+  readonly item: RoutineItem | null;
+  readonly changed: boolean;
+  readonly revision: number;
+}
+
+/**
+ * A single calendar file, owned by one account.
+ *
+ * The four-state outcomes and the iCalendar round trip come from the shared
+ * packages, so the hosted service cannot drift from the Home Assistant
+ * integration: a missed item is never rewritten as completed here either.
+ */
+export class CalendarStore {
+  private readonly lock = new Mutex();
+  private items: RoutineItem[] = [];
+  private series: RoutineTemplate[] = [];
+  private preserved: string[] = [];
+  private issues: IcsIssue[] = [];
+  private meta: CalendarMeta = { revision: 0, updatedAt: new Date(0).toISOString(), appliedCommands: [] };
+  private loaded = false;
+
+  constructor(
+    private readonly icsPath: string,
+    private readonly metaPath: string,
+  ) {}
+
+  get revision(): number {
+    return this.meta.revision;
+  }
+
+  get calendarIssues(): readonly IcsIssue[] {
+    return this.issues;
+  }
+
+  async ensureLoaded(): Promise<void> {
+    if (this.loaded) return;
+    await this.lock.run(async () => {
+      if (this.loaded) return;
+      await this.loadUnlocked();
+      this.loaded = true;
+    });
+  }
+
+  /** Items overlapping [from, from + days), with series expanded. */
+  async agenda(from: string, days: number): Promise<AgendaResult> {
+    await this.ensureLoaded();
+    return this.lock.run(async () => {
+      const end = plusDays(from, days);
+      return { items: this.itemsForRange(from, end), revision: this.meta.revision };
+    });
+  }
+
+  async apply(input: CommandInput): Promise<CommandOutcome> {
+    await this.ensureLoaded();
+    return this.lock.run(async () => {
+      const key = input.clientCommandId;
+      if (key !== undefined && this.meta.appliedCommands.includes(key)) {
+        // Already applied. Return the current item so a retry is a no-op.
+        return {
+          item: input.uid !== undefined ? this.find(input.uid) : null,
+          changed: false,
+          revision: this.meta.revision,
+        };
+      }
+
+      // Optimistic concurrency is checked against the calendar revision, which
+      // is the value `GET /api/agenda` hands the client. The per-record
+      // revision in the ICS is internal metadata and is not the client's token.
+      if (input.expectedRevision !== undefined && input.expectedRevision !== this.meta.revision) {
+        throw conflict(
+          `the calendar is at revision ${this.meta.revision}, not ${input.expectedRevision}`,
+          "revision_conflict",
+        );
+      }
+
+      const before = this.items;
+      const result = this.mutate(input);
+      if (!result.changed) {
+        return { item: result.item, changed: false, revision: this.meta.revision };
+      }
+
+      this.meta.revision += 1;
+      this.meta.updatedAt = new Date().toISOString();
+      if (key !== undefined) {
+        this.meta.appliedCommands.push(key);
+        if (this.meta.appliedCommands.length > MAX_APPLIED_COMMANDS) {
+          this.meta.appliedCommands.splice(0, this.meta.appliedCommands.length - MAX_APPLIED_COMMANDS);
+        }
+      }
+      try {
+        await this.persistUnlocked();
+      } catch (error) {
+        // A failed write must not leave the in-memory state ahead of the file.
+        this.items = before;
+        this.meta.revision -= 1;
+        if (key !== undefined) this.meta.appliedCommands.pop();
+        throw error;
+      }
+      return { item: result.item, changed: true, revision: this.meta.revision };
+    });
+  }
+
+  private mutate(input: CommandInput): { item: RoutineItem | null; changed: boolean } {
+    try {
+      switch (input.command) {
+        case "complete": {
+          requireUid(input);
+          if (!input.completedAt) {
+            throw badRequest("invalid_command", "complete requires completedAt");
+          }
+          const outcome = complete(this.items, input.uid, input.completedAt);
+          this.items = [...outcome.items];
+          return { item: outcome.result.item, changed: outcome.result.changed };
+        }
+        case "mark_missed": {
+          requireUid(input);
+          const outcome = markMissed(this.items, input.uid);
+          this.items = [...outcome.items];
+          return { item: outcome.result.item, changed: outcome.result.changed };
+        }
+        case "skip": {
+          requireUid(input);
+          const outcome = skip(this.items, input.uid);
+          this.items = [...outcome.items];
+          return { item: outcome.result.item, changed: outcome.result.changed };
+        }
+        case "reset": {
+          requireUid(input);
+          const outcome = reset(this.items, input.uid);
+          this.items = [...outcome.items];
+          return { item: outcome.result.item, changed: outcome.result.changed };
+        }
+        case "create": {
+          if (!input.item) throw badRequest("invalid_command", "create requires item");
+          const outcome = create(this.items, input.item);
+          this.items = [...outcome.items];
+          return { item: outcome.result.item, changed: outcome.result.changed };
+        }
+        case "update": {
+          requireUid(input);
+          if (!input.patch) throw badRequest("invalid_command", "update requires patch");
+          const outcome = update(this.items, input.uid, input.patch);
+          this.items = [...outcome.items];
+          return { item: outcome.result.item, changed: outcome.result.changed };
+        }
+        case "delete": {
+          requireUid(input);
+          const outcome = deleteItem(this.items, input.uid);
+          this.items = [...outcome.items];
+          return { item: outcome.item, changed: outcome.changed };
+        }
+        default: {
+          const exhaustive: never = input.command;
+          throw badRequest("invalid_command", `unknown command ${String(exhaustive)}`);
+        }
+      }
+    } catch (error) {
+      if (error instanceof RoutineCommandError) throw translate(error);
+      throw error;
+    }
+  }
+
+  private itemsForRange(from: string, to: string): RoutineItem[] {
+    const direct = this.items.filter((item) => item.date >= from && item.date < to);
+    const seen = new Set(direct.map((item) => item.uid));
+    const expanded: RoutineItem[] = [];
+    for (const template of this.series) {
+      for (const occurrence of expandSeries(template, from, to, this.items)) {
+        if (seen.has(occurrence.uid)) continue;
+        seen.add(occurrence.uid);
+        expanded.push(occurrence);
+      }
+    }
+    return [...direct, ...expanded].sort(compareItems);
+  }
+
+  private find(uid: string): RoutineItem | null {
+    return this.items.find((item) => item.uid === uid) ?? null;
+  }
+
+  private async loadUnlocked(): Promise<void> {
+    const raw = await fs.readFile(this.icsPath, "utf8").catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    });
+    if (raw === null) {
+      this.items = [];
+      this.series = [];
+      this.preserved = [];
+      this.issues = [];
+    } else {
+      const parsed = parseCalendar(raw);
+      this.items = [...parsed.items];
+      this.series = [...parsed.series];
+      this.preserved = [...parsed.preserved];
+      this.issues = [...parsed.issues];
+    }
+
+    const meta = await fs
+      .readFile(this.metaPath, "utf8")
+      .then((text) => JSON.parse(text) as CalendarMeta)
+      .catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return null;
+        throw error;
+      });
+    this.meta = meta ?? { revision: 0, updatedAt: new Date().toISOString(), appliedCommands: [] };
+    if (!Array.isArray(this.meta.appliedCommands)) this.meta.appliedCommands = [];
+  }
+
+  private async persistUnlocked(): Promise<void> {
+    const ics = serializeCalendar({
+      items: this.items,
+      series: this.series,
+      preserved: this.preserved,
+    });
+    await writeFileAtomic(this.icsPath, ics);
+    await writeFileAtomic(this.metaPath, `${JSON.stringify(this.meta, null, 2)}\n`);
+    await fs.mkdir(path.dirname(this.icsPath), { recursive: true });
+  }
+}
+
+function requireUid(input: CommandInput): asserts input is CommandInput & { uid: string } {
+  if (!input.uid) throw badRequest("invalid_command", `${input.command} requires uid`);
+}
+
+/** Maps a domain error onto the HTTP contract. */
+function translate(error: RoutineCommandError): ApiError {
+  switch (error.code) {
+    case "not-found":
+      return notFound(error.message);
+    case "conflict":
+      return conflict(error.message, "revision_conflict");
+    case "duplicate-uid":
+      return conflict(error.message, "duplicate_uid");
+    case "series-completion":
+      return conflict(error.message, "series_completion");
+    default:
+      return badRequest("invalid_command", error.details.length > 0 ? error.details.join("; ") : error.message);
+  }
+}
+
+function compareItems(a: RoutineItem, b: RoutineItem): number {
+  if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+  const orderA = a.order ?? Number.POSITIVE_INFINITY;
+  const orderB = b.order ?? Number.POSITIVE_INFINITY;
+  if (orderA !== orderB) return orderA - orderB;
+  if (a.title !== b.title) return a.title < b.title ? -1 : 1;
+  return a.uid < b.uid ? -1 : a.uid > b.uid ? 1 : 0;
+}
+
+export function plusDays(date: string, days: number): string {
+  if (!isCalendarDate(date)) throw badRequest("invalid_date", "from must be YYYY-MM-DD");
+  const [year, month, day] = date.split("-").map(Number) as [number, number, number];
+  const utc = new Date(Date.UTC(year, month - 1, day));
+  utc.setUTCDate(utc.getUTCDate() + days);
+  return utc.toISOString().slice(0, 10);
+}
+
+export const STATUSES: readonly RoutineStatus[] = ["pending", "completed", "missed", "skipped"];

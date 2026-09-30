@@ -1,0 +1,155 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repository:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Catches a source file silently excluded by .gitignore, and the
+      # misspelling of the product name, both of which have shipped before.
+      - run: ./tools/check.sh
+
+  typescript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # No `version`: pnpm/action-setup reads `packageManager` from package.json.
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Domain packages, API integration tests, PWA offline rules, and a jsdom
+      # run of the real application.
+      - run: pnpm test
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: autiplanner-saas:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Start the container
+        run: |
+          docker run -d --name autiplanner -p 8080:8080 -e DATA_DIR=/tmp/data autiplanner-saas:ci
+
+      - name: Wait for health
+        run: |
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/api/health > /dev/null; then
+              echo "healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "container did not become healthy"
+          docker logs autiplanner
+          exit 1
+
+      - name: The PWA is served
+        run: |
+          curl -fsS http://127.0.0.1:8080/ | grep -q "AutiPlanner"
+          curl -fsS -o /dev/null http://127.0.0.1:8080/app.js
+          curl -fsS -o /dev/null http://127.0.0.1:8080/sw.js
+          curl -fsS -o /dev/null http://127.0.0.1:8080/manifest.webmanifest
+
+      - name: Round trip through the running image
+        run: |
+          curl -fsS -X POST http://127.0.0.1:8080/api/auth/register \
+            -H 'content-type: application/json' \
+            -d '{"email":"ci@example.com","password":"a perfectly good password"}' \
+            -o /tmp/session.json
+          node -e "
+            const session = require('/tmp/session.json');
+            if (!session.token) throw new Error('no token returned');
+            console.log('registered', session.account.email);
+          "
+
+      - if: always()
+        run: docker logs autiplanner || true
+
+  # Publishes to the GitHub Container Registry so the image can be pulled onto a
+  # host instead of being built there. Runs only for the default branch and for
+  # version tags, and only after the image has been proved to work above.
+  publish:
+    needs: [repository, typescript, test, docker]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Sign in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Work out the tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          # Lower case: a container registry rejects upper case paths, and the
+          # repository name contains capitals.
+          images: ghcr.io/lunikodevelopment/autiplanner-saas
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=short
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        run: |
+          {
+            echo "### Published image"
+            echo
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

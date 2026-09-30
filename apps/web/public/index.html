@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>AutiPlanner</title>
+    <meta name="description" content="Day-part routine planner with four-state outcomes that works offline." />
+    <meta name="theme-color" content="#2e4a62" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icons/icon-192.png" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#agenda">Skip to the routine</a>
+
+    <!-- Sign in. Hidden once a session exists. -->
+    <main id="auth" class="auth" hidden>
+      <h1>AutiPlanner</h1>
+      <p class="muted">
+        Sign in to sync your routine. Everything works offline once you are in.
+      </p>
+      <form id="auth-form" novalidate>
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" autocomplete="username" required />
+
+        <label for="password">Password</label>
+        <input
+          id="password"
+          name="password"
+          type="password"
+          autocomplete="current-password"
+          minlength="8"
+          required
+        />
+
+        <div class="auth-actions">
+          <button type="submit" id="sign-in">Sign in</button>
+          <button type="button" id="create-account" class="secondary">Create account</button>
+        </div>
+        <p id="auth-error" class="error" role="alert" hidden></p>
+      </form>
+    </main>
+
+    <!-- The planner. -->
+    <main id="planner" hidden>
+      <header class="topbar">
+        <button id="prev-day" class="icon" type="button" aria-label="Previous day">‹</button>
+        <h1 id="day-heading">Today</h1>
+        <button id="next-day" class="icon" type="button" aria-label="Next day">›</button>
+        <button id="refresh" class="icon" type="button" aria-label="Refresh from the server">⟳</button>
+        <button id="sign-out" class="icon" type="button" aria-label="Sign out">⎋</button>
+      </header>
+
+      <p id="connection" class="banner" role="status" hidden></p>
+      <p id="conflict" class="banner warn" role="alert" hidden></p>
+
+      <section id="summary" class="summary" aria-label="Outcome summary"></section>
+
+      <div id="agenda" tabindex="-1"></div>
+
+      <details class="add">
+        <summary>Add a routine item</summary>
+        <form id="add-form">
+          <label for="new-title">Title</label>
+          <input id="new-title" name="title" required maxlength="120" />
+
+          <label for="new-daypart">Day part</label>
+          <select id="new-daypart" name="dayPart">
+            <option value="morning">Morning</option>
+            <option value="afternoon">Afternoon</option>
+            <option value="evening">Evening</option>
+            <option value="night">Night</option>
+          </select>
+
+          <label for="new-time">Time (optional)</label>
+          <input id="new-time" name="time" type="time" />
+
+          <button type="submit">Add</button>
+        </form>
+      </details>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,21 @@
+{
+  "name": "@autiplanner/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "Hosted AutiPlanner API: accounts, calendars, and the command endpoint.",
+  "exports": {
+    ".": "./src/app.ts"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@autiplanner/core": "workspace:*",
+    "@autiplanner/ics": "workspace:*"
+  }
+}

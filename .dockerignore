@@ -1,0 +1,9 @@
+# Keep host build output and dependencies out of the image, otherwise the
+# container's pnpm workspace links are replaced by the host's.
+**/node_modules
+**/dist
+/data
+/data-test
+.git
+.github
+*.log

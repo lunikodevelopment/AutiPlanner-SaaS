@@ -1,0 +1,24 @@
+services:
+  autiplanner:
+    build: .
+    image: autiplanner-saas:local
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      # Everything the server owns: accounts and the per-household calendars.
+      - ./data:/data
+    environment:
+      ALLOW_REGISTRATION: "true"
+      TOKEN_TTL_DAYS: "365"
+      AUTH_RATE_LIMIT_PER_MINUTE: "20"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8080/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
