@@ -2,6 +2,13 @@ import type { DayPart, RoutineStatus } from "@autiplanner/core";
 
 export const AUTIPLANNER_PRODID = "-//AutiPlanner//Routine Calendar//EN";
 
+/**
+ * The product id on the read-only VEVENT projection served to calendar
+ * applications. Distinct from {@link AUTIPLANNER_PRODID} so a subscribed
+ * calendar is visibly a different document from the canonical VTODO store.
+ */
+export const AUTIPLANNER_FEED_PRODID = "-//AutiPlanner//Routine Feed//EN";
+
 export const ICS_DAY_PART_PROPERTY = "X-AUTIPLANNER-DAYPART";
 export const ICS_OUTCOME_PROPERTY = "X-AUTIPLANNER-OUTCOME";
 export const ICS_ORDER_PROPERTY = "X-AUTIPLANNER-ORDER";

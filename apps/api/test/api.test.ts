@@ -517,6 +517,17 @@ describe("subscription feed", () => {
     };
   }
 
+  function isoToday(): string {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  function nextIso(date: string): string {
+    const [year, month, day] = date.split("-").map(Number) as [number, number, number];
+    const utc = new Date(Date.UTC(year, month - 1, day));
+    utc.setUTCDate(utc.getUTCDate() + 1);
+    return utc.toISOString().slice(0, 10);
+  }
+
   async function setupCalendar(email: string): Promise<{ token: string; calendarId: string }> {
     const registered = await api("POST", "/api/auth/register", {
       body: { email, password: "a perfectly good password" },
@@ -530,7 +541,8 @@ describe("subscription feed", () => {
         item: {
           uid: "feed-item@autiplanner.local",
           title: "Feed item",
-          date: "2026-10-05",
+          // The feed covers a window around today, so date the item today.
+          date: isoToday(),
           dayPart: "morning",
           status: "pending",
         },
@@ -551,8 +563,15 @@ describe("subscription feed", () => {
     assert.match(response.contentType ?? "", /text\/calendar/);
     assert.match(response.text, /^BEGIN:VCALENDAR/);
     assert.match(response.text, /feed-item@autiplanner\.local/);
-    // The AutiPlanner extensions must survive the round trip through the feed.
-    assert.match(response.text, /X-AUTIPLANNER-/);
+    // The AutiPlanner extensions must survive into the feed.
+    assert.match(response.text, /X-AUTIPLANNER-OUTCOME:PENDING/);
+    // Calendar apps render VEVENTs; a VTODO-only feed shows nothing in Apple
+    // Calendar or Google Calendar, which is the bug this projection fixes.
+    assert.match(response.text, /BEGIN:VEVENT/);
+    assert.doesNotMatch(response.text, /BEGIN:VTODO/);
+    const basic = isoToday().replaceAll("-", "");
+    assert.match(response.text, new RegExp(`DTSTART;VALUE=DATE:${basic}`));
+    assert.match(response.text, new RegExp(`DTEND;VALUE=DATE:${nextIso(isoToday()).replaceAll("-", "")}`));
   });
 
   test("the feed path is stable across reads", async () => {

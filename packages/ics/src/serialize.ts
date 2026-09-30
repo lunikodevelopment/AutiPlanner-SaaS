@@ -3,9 +3,11 @@ import {
   toUtcTimestamp,
   validateRoutineItem,
   type RoutineItem,
+  type RoutineStatus,
   type RoutineTemplate,
 } from "@autiplanner/core";
 import {
+  AUTIPLANNER_FEED_PRODID,
   AUTIPLANNER_PRODID,
   DAY_PART_TO_ICS,
   ICS_DATE_PROPERTY,
@@ -173,6 +175,101 @@ function serializeItem(item: RoutineItem, dtstamp: Date): string[] {
   }
   lines.push("END:VTODO");
   return lines;
+}
+
+/**
+ * Writes routine items as a VEVENT calendar for calendar applications.
+ *
+ * The canonical AutiPlanner profile is VTODO, but Google Calendar and Apple
+ * Calendar do not render VTODOs in a subscribed calendar. This projection keeps
+ * the outcome and day part in the X-AUTIPLANNER-* properties and the summary
+ * glyph, so subscribing never turns a missed routine into a completed one; it
+ * only changes the component a calendar app can display.
+ */
+export function serializeEventCalendar(
+  items: readonly RoutineItem[],
+  options: SerializeOptions = {},
+): string {
+  const dtstamp = options.dtstamp ?? new Date();
+  if (Number.isNaN(dtstamp.getTime())) {
+    throw new IcsSerializeError(["dtstamp is invalid"]);
+  }
+  assertSerializable(items);
+  const prodId = options.prodId ?? AUTIPLANNER_FEED_PRODID;
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    textProperty("PRODID", prodId),
+    "CALSCALE:GREGORIAN",
+  ];
+  for (const item of items) {
+    lines.push(...serializeEvent(item, dtstamp));
+  }
+  lines.push("END:VCALENDAR");
+  return `${lines.join("\r\n")}\r\n`;
+}
+
+const OUTCOME_SYMBOL: Readonly<Record<RoutineStatus, string>> = {
+  pending: "○",
+  completed: "✓",
+  missed: "✕",
+  skipped: "—",
+};
+
+function serializeEvent(item: RoutineItem, dtstamp: Date): string[] {
+  const lines = [
+    "BEGIN:VEVENT",
+    textProperty("UID", item.uid),
+    propertyLine("DTSTAMP", formatUtcStamp(dtstamp)),
+    // A routine is a plan, not a meeting: do not make the household busy.
+    "TRANSP:TRANSPARENT",
+  ];
+  if (item.start === undefined) {
+    lines.push(dateProperty("DTSTART", item.date));
+  } else {
+    lines.push(timeProperty("DTSTART", item.start, item.timezone));
+  }
+  if (item.end !== undefined) {
+    lines.push(timeProperty("DTEND", item.end, item.timezone));
+  } else if (item.due !== undefined) {
+    lines.push(timeProperty("DTEND", item.due, item.timezone));
+  } else if (item.start === undefined) {
+    // An all-day VEVENT must end on the following day.
+    lines.push(dateProperty("DTEND", nextDay(item.date)));
+  }
+  lines.push(textProperty("SUMMARY", `${OUTCOME_SYMBOL[item.status]} ${item.title}`));
+  lines.push(textProperty("DESCRIPTION", eventDescription(item)));
+  lines.push(propertyLine(ICS_DATE_PROPERTY, item.date));
+  lines.push(propertyLine(ICS_DAY_PART_PROPERTY, DAY_PART_TO_ICS[item.dayPart]));
+  lines.push(propertyLine(ICS_OUTCOME_PROPERTY, STATUS_TO_ICS_OUTCOME[item.status]));
+  if (item.order !== undefined) {
+    lines.push(propertyLine(ICS_ORDER_PROPERTY, String(item.order)));
+  }
+  if (item.tags && item.tags.length > 0) {
+    lines.push(propertyLine("CATEGORIES", joinEscapedList(item.tags)));
+  }
+  if (item.routineId !== undefined) {
+    lines.push(textProperty(ICS_ROUTINE_ID_PROPERTY, item.routineId));
+  }
+  if (item.revision !== undefined) {
+    lines.push(propertyLine(ICS_REVISION_PROPERTY, String(item.revision)));
+  }
+  lines.push("END:VEVENT");
+  return lines;
+}
+
+function eventDescription(item: RoutineItem): string {
+  const parts = [`Outcome: ${item.status}`, `Day part: ${item.dayPart}`];
+  if (item.completedAt) parts.push(`Completed: ${item.completedAt}`);
+  if (item.description) parts.push(item.description);
+  return parts.join("\n");
+}
+
+function nextDay(date: string): string {
+  const [year, month, day] = date.split("-").map(Number) as [number, number, number];
+  const utc = new Date(Date.UTC(year, month - 1, day));
+  utc.setUTCDate(utc.getUTCDate() + 1);
+  return utc.toISOString().slice(0, 10);
 }
 
 function timeProperty(name: string, timestamp: string, timezone: string | undefined): string {

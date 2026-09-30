@@ -17,6 +17,7 @@ import {
 import { CalendarRegistry } from "./registry.js";
 import { RateLimiter, constantTimeStringEqual } from "./security.js";
 import { serveStatic } from "./static.js";
+import { serializeEventCalendar } from "@autiplanner/ics";
 import type { RoutineItem } from "@autiplanner/core";
 
 export interface AppDependencies {
@@ -31,6 +32,14 @@ const CALENDAR_FEED_ROUTE = /^\/api\/calendars\/([^/]+)\/feed$/;
 const CALENDAR_FEED_ROTATE_ROUTE = /^\/api\/calendars\/([^/]+)\/feed\/rotate$/;
 /** The unauthenticated subscription feed. The token is the credential. */
 const FEED_ROUTE = /^\/api\/feed\/([^/]+)\/([^/]+)\.ics$/;
+
+/**
+ * The feed covers a bounded window around today. Series expansion is capped at
+ * 366 days by the domain package, and a calendar app only needs a useful slice,
+ * not an unbounded future.
+ */
+const FEED_PAST_DAYS = 30;
+const FEED_FUTURE_DAYS = 330;
 
 /** Routes that require a session, matched before authentication. */
 function isProtectedRoute(method: string, pathname: string): boolean {
@@ -99,7 +108,7 @@ export function createApp(dependencies: AppDependencies): http.RequestListener {
     }
 
     if (pathname === "/api/health" && method === "GET") {
-      sendJson(response, 200, { status: "ok", version: "0.1.0" });
+      sendJson(response, 200, { status: "ok", version: "0.1.1" });
       return;
     }
 
@@ -286,7 +295,15 @@ export function createApp(dependencies: AppDependencies): http.RequestListener {
     if (expected === null || !constantTimeStringEqual(expected, token)) {
       throw notFound();
     }
-    const body = Buffer.from(await store.readIcs(), "utf8");
+    // The store is the canonical VTODO profile; calendar applications only draw
+    // VEVENTs, so the feed is a projection over the same items with series
+    // expanded for a bounded window.
+    const today = new Date().toISOString().slice(0, 10);
+    const items = await store.feedItems(
+      plusDays(today, -FEED_PAST_DAYS),
+      plusDays(today, FEED_FUTURE_DAYS + 1),
+    );
+    const body = Buffer.from(serializeEventCalendar(items), "utf8");
     response.writeHead(200, {
       "content-type": "text/calendar; charset=utf-8",
       "content-length": body.length,

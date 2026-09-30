@@ -87,6 +87,12 @@ The URL embeds a secret token. Rotating it (in the web app, or
 `POST /api/calendars/<id>/feed/rotate`) invalidates the old URL, so re-add it
 wherever it was used.
 
+The feed is a calendar-friendly projection: the server stores the routine as
+`VTODO`, which Apple Calendar and Google Calendar do not draw in a subscription,
+so the feed emits `VEVENT`s. The four-state outcome stays in
+`X-AUTIPLANNER-OUTCOME` and in the summary glyph (`✓` completed, `○` pending,
+`✕` missed, `—` skipped).
+
 ## Actions
 
 The integration registers these actions, named as in the on-device integration.

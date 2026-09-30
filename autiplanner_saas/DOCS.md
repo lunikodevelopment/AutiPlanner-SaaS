@@ -49,6 +49,11 @@ from the `feed_url` attribute of the `calendar.<name>` entity, or from
 `GET /api/me`. The URL contains a secret token; **New URL** in the web app
 invalidates the previous one.
 
+The feed is a `VEVENT` projection of the stored routine, so it shows in calendar
+apps with the outcome as a glyph in the title. If a calendar shows nothing,
+remove the subscription and add it again: Apple Calendar in particular caches a
+subscription that was added before the feed worked.
+
 ## Ports
 
 The web interface and API listen on port `8080` inside the app, published on the

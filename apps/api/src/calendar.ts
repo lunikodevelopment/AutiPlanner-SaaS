@@ -130,20 +130,15 @@ export class CalendarStore {
   }
 
   /**
-   * The calendar as an ``.ics`` document, for the subscription feed.
+   * Items overlapping ``[from, to)`` with series expanded, for the subscription
+   * feed.
    *
-   * Rebuilt from the loaded items rather than read from disk, so a feed read
-   * never races a write and always reflects the revision the server holds.
+   * Reuses the range logic the agenda endpoint uses, so the feed and an agenda
+   * read never disagree about which occurrences exist.
    */
-  async readIcs(): Promise<string> {
+  async feedItems(from: string, to: string): Promise<RoutineItem[]> {
     await this.ensureLoaded();
-    return this.lock.run(async () =>
-      serializeCalendar({
-        items: this.items,
-        series: this.series,
-        preserved: this.preserved,
-      }),
-    );
+    return this.lock.run(async () => this.itemsForRange(from, to));
   }
 
   async ensureLoaded(): Promise<void> {

@@ -101,6 +101,12 @@ in the `feed_url` attribute of the `calendar.<name>` entity, or as `feedPath` on
 each calendar from `GET /api/me`. Rotating the token (web app, or
 `POST /api/calendars/<id>/feed/rotate`) invalidates the old URL.
 
+The feed is a projection, not the stored file. The server keeps the full
+AutiPlanner profile as `VTODO`, but calendar applications only draw `VEVENT`, so
+the feed emits `VEVENT`s with the outcome in `X-AUTIPLANNER-OUTCOME` and in the
+summary glyph — `✓` completed, `○` pending, `✕` missed, `—` skipped. A missed
+routine is never shown as completed.
+
 
 ## How it is put together
 

@@ -9,7 +9,7 @@ import test from "node:test";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseCalendar } from "./parse.js";
-import { serializeCalendar, serializeItems } from "./serialize.js";
+import { serializeCalendar, serializeEventCalendar, serializeItems } from "./serialize.js";
 import { IcsSerializeError } from "./types.js";
 import { escapeText, foldContentLine, unfoldIcs, unescapeText } from "./text.js";
 
@@ -444,4 +444,38 @@ test("refuses to serialize an invalid missed item as completed", () => {
       ]),
     (error: unknown) => error instanceof IcsSerializeError,
   );
+});
+
+test("the event projection writes VEVENTs a calendar app can show", () => {
+  const allDay = routine({ uid: "all-day@autiplanner.local", title: "All day" });
+  delete allDay.start;
+  const written = serializeEventCalendar(
+    [
+      allDay,
+      routine({ uid: "timed@autiplanner.local", title: "Timed", status: "missed" }),
+    ],
+    { dtstamp: stamp },
+  );
+
+  assert.match(written, /^BEGIN:VCALENDAR/);
+  assert.match(written, /PRODID:-\/\/AutiPlanner\/\/Routine Feed\/\/EN/);
+  assert.match(written, /BEGIN:VEVENT/);
+  // A VTODO feed is invisible in Google Calendar and Apple Calendar.
+  assert.doesNotMatch(written, /BEGIN:VTODO/);
+  // An all-day event starts on the day and ends the day after.
+  assert.match(written, /DTSTART;VALUE=DATE:20260811/);
+  assert.match(written, /DTEND;VALUE=DATE:20260812/);
+  assert.match(written, /DTSTART:20260811T080000Z/);
+  // The four-state outcome survives, in the extension and in the summary glyph.
+  assert.match(written, /X-AUTIPLANNER-OUTCOME:MISSED/);
+  assert.match(written, /SUMMARY:✕ Timed/);
+});
+
+test("the event projection never emits a completedAt for a missed item", () => {
+  const written = serializeEventCalendar(
+    [routine({ uid: "missed@autiplanner.local", status: "missed" })],
+    { dtstamp: stamp },
+  );
+  assert.match(written, /X-AUTIPLANNER-OUTCOME:MISSED/);
+  assert.doesNotMatch(written, /X-AUTIPLANNER-OUTCOME:COMPLETED/);
 });

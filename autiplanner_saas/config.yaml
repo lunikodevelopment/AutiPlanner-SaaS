@@ -1,5 +1,5 @@
 name: AutiPlanner (hosted)
-version: "0.1.0"
+version: "0.1.1"
 slug: autiplanner_saas
 description: >-
   The hosted AutiPlanner API and offline-first planner, running on your Home
