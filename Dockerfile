@@ -29,14 +29,18 @@ COPY packages/core/package.json ./packages/core/
 COPY packages/ics/package.json ./packages/ics/
 COPY apps/api/package.json ./apps/api/
 COPY apps/web/package.json ./apps/web/
+COPY apps/card/package.json ./apps/card/
 RUN corepack pnpm install --frozen-lockfile
 
 COPY tsconfig.base.json ./
 COPY packages ./packages
 COPY apps ./apps
 
-# Builds the PWA into apps/web/dist, which the API serves.
-RUN corepack pnpm build
+# Builds the PWA into apps/web/dist, which the API serves. Only the web app: the
+# dashboard card is built on a workstation and committed for HACS to serve, so
+# baking it in would spend emulated build time on a file the container never
+# serves.
+RUN corepack pnpm --filter ./apps/web build
 
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
