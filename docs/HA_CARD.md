@@ -71,11 +71,20 @@ More than one calendar means one card each, pointing at its own sensor.
 - **Outcomes.** A pending item offers ✓ completed, ✕ missed, and — skipped. A
   decided item offers only ↺ back to pending, because the four states are
   mutually exclusive and there is no "complete a missed item".
-- **Add an item.** Title, day part, and optionally a date and a time. The date
-  is optional and an empty one means **today**, which is where the web app puts
-  an item too: it adds to the day you are looking at rather than asking. A time
-  is stored as a floating local clock, so it follows the household's own timezone
-  rather than the server's.
+- **Add an item.** Title, day part, and optionally a date, a time, and whether
+  it repeats. The date is optional and an empty one means **today**, which is
+  where the web app puts an item too: it adds to the day you are looking at
+  rather than asking. A time is stored as a floating local clock, so it follows
+  the household's own timezone rather than the server's.
+- **Repeat it.** **Repeats** offers *Just once*, *Every day*, and *Every week*.
+  A weekly repeat lands on the weekday of the date you chose, so it needs no
+  second question, and the form says which day that is. Either way the server
+  stores a **rule**, not a pile of days, and expands it for whatever is being
+  read. A day that repeats is marked with ↻.
+- **Stop a repeat.** Tapping ↻ asks first, because removing a repeat removes
+  every day it falls on, including the ones already recorded. One stray tap on a
+  shared dashboard must not undo a routine. Tapping ↻ on a single day and
+  recording an outcome there affects only that day.
 - **Immediate.** Each action calls the integration, then asks the coordinator to
   poll now, so a change is on screen in about a second rather than at the next
   poll interval. The row updates optimistically first, and the local state is

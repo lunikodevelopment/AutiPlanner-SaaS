@@ -156,7 +156,8 @@ The integration registers these actions, named as in the on-device integration.
 | `autiplanner_saas.reset` | Return an item to pending |
 | `autiplanner_saas.create` | Add a routine item |
 | `autiplanner_saas.update` | Patch a routine item |
-| `autiplanner_saas.delete` | Remove a routine item |
+| `autiplanner_saas.delete` | Remove a routine item, or a repeat by its series uid |
+| `autiplanner_saas.add_series` | Add a repeating routine |
 
 Every action accepts an optional `expected_revision`. When it does not match the
 server's, the call fails with a conflict and nothing is written. Read the
@@ -191,6 +192,47 @@ data:
 A `start` or `due` with no offset is a floating local time: it is the
 household's own clock, and travels correctly across a timezone change. Add
 `timezone` only if the item really belongs to a named zone.
+
+### Repeating routines
+
+`add_series` stores a **rule**. Its occurrences are expanded for whatever window
+is being read, so nothing about the future is written down, and a change to the
+rule reaches every day at once.
+
+```yaml
+action: autiplanner_saas.add_series
+target:
+  entity_id: sensor.routine_agenda
+data:
+  uid: "swimming@example"
+  title: "Swimming"
+  date: "2026-09-30"          # the first day; weekly repeats use its weekday
+  day_part: afternoon
+  recurrence:
+    freq: weekly              # or daily
+    byDay: [WE]               # weekly only; without it, the anchor's weekday
+  start: "2026-09-30T15:00:00"
+```
+
+An outcome still belongs to **one day**, so record it against that day's
+occurrence uid, which is `<series uid>:<YYYY-MM-DD>`:
+
+```yaml
+action: autiplanner_saas.mark_missed
+target:
+  entity_id: sensor.routine_agenda
+data:
+  uid: "swimming@example:2026-10-07"
+```
+
+Other weeks are untouched. `expected_revision` works as it does for any other
+action, and the agenda sensors carry each day as an ordinary item with a
+`routineId` naming the series it came from.
+
+Remove the whole repeat by passing the series uid to `delete`. Every day it
+falls on goes with it, including the ones already recorded, so a deleted repeat
+does not leave a scatter of one-off items behind. `exdates` leaves individual
+days out without ending the series.
 
 ## Options
 

@@ -28,7 +28,10 @@ up, because it draws that integration's agenda sensor and acts through its
 actions. It holds no AutiPlanner credential of its own.
 
 Adding an item needs only a title and a day part: the date is optional and
-defaults to today, and a time is optional too.
+defaults to today, and a time is optional too. **Repeats** offers *Just once*,
+*Every day*, and *Every week*; a weekly repeat lands on the weekday of the date
+you chose, and a repeating day is marked with ↻. Tapping ↻ asks before removing
+the repeat, because that removes every day it falls on.
 
 | Option | Default | Meaning |
 |---|---|---|

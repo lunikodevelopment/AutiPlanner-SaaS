@@ -93,6 +93,12 @@ There are three pieces, and they are independent:
   `complete` / `mark_missed` / `skip` / `reset` plus CRUD actions. Install it
   through HACS (add this repository as an **Integration**) or copy the folder.
 
+- **Repeating routines.** A routine can repeat every day or every week on the
+  same day and day part, or stay a one-off. The server stores a **rule** and
+  expands it for whatever window is read, so nothing about the future is written
+  down, and recording an outcome for one day leaves the other days alone. Both
+  the web app and the card offer it.
+
 - **The card** ([`AutiPlanner-Card`](https://github.com/lunikodevelopment/AutiPlanner-Card))
   is a Lovelace card for the routine: change an item's outcome or add a new one
   from the dashboard. Its source is `apps/card` here and is published to its own
