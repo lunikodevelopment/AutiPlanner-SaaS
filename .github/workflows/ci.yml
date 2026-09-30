@@ -161,6 +161,10 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Stamped into the io.hass.version label so the image identifies itself
+          # as the same version as the tag Supervisor pulls.
+          build-args: |
+            BUILD_VERSION=${{ steps.meta.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

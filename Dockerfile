@@ -6,6 +6,19 @@
 
 FROM node:22-alpine
 
+# Home Assistant app metadata. Supervisor requires these on an image it did not
+# build itself; `io.hass.type` is what marks the image as an app. The build arg
+# is set from the release tag in CI so the label matches the tag.
+ARG BUILD_VERSION="0.0.0"
+ARG BUILD_ARCH="aarch64|amd64"
+LABEL \
+    io.hass.version="${BUILD_VERSION}" \
+    io.hass.type="app" \
+    io.hass.arch="${BUILD_ARCH}" \
+    io.hass.name="AutiPlanner (hosted)" \
+    io.hass.description="Hosted AutiPlanner API and offline-first planner" \
+    io.hass.url="https://github.com/lunikodevelopment/AutiPlanner-SaaS"
+
 RUN corepack enable
 
 WORKDIR /app
